@@ -14,4 +14,4 @@ client.once('ready', () => {
   console.log(`✅ Bot zalogowany jako ${client.user.tag}`);
 });
 
-client.login(process.env.TOKEN);
+client.login(process.env.BOT_TOKEN);
