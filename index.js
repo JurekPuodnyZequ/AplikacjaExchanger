@@ -33,8 +33,8 @@ const VERIFY_ROLE_ID    = ROLE_ID || '1500246544140734613';
 const LOG_CHANNEL_ID    = '1500246546862833868';
 const VERIFY_MSG_KEY    = 'verify_message_id';
 
-const RAVEN_LOGO_URL = 'https://i.imgur.com/qkxUmcP.png';
-const CAT_GIF_URL    = 'https://media.tenor.com/x8v1oNUOmg4AAAAC/cat-meme.gif';
+const RAVEN_LOGO_URL = 'https://i.imgur.com/sZmJes3.png';
+const CAT_GIF_URL    = 'https://i.imgur.com/m5FDtug.gif';
 
 // ─── BAZA DANYCH ───────────────────────────────────────────────────────────────
 const pool = new Pool({
@@ -463,3 +463,4 @@ app.get('/callback', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Serwer HTTP działa na porcie ${PORT}`));
+    
