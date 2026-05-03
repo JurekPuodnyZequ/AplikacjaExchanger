@@ -67,7 +67,7 @@ async function initDB() {
       value TEXT
     )
   `);
-  console.log('✅ Baza danych gotowa!');
+  console.log('Baza danych gotowa!');
 }
 
 async function saveUser(data) {
@@ -129,17 +129,20 @@ async function refreshAccessToken(userId) {
   }
 }
 
-// ─── STATYSTYKI KLIENTÓW ───────────────────────────────────────────────────────
+// ─── STATYSTYKI KLIENTOW ───────────────────────────────────────────────────────
+// Tylko cache - zero fetchy, zero rate limitow.
+// Cache jest aktualny dzieki GuildMembers intent + guildMemberUpdate event.
 async function updateKlienciStats() {
   try {
-    const guild = await client.guilds.fetch(GUILD_ID, { force: true });
-    const members = await guild.members.fetch({ force: true });
-    const count = members.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
-    const channel = await client.channels.fetch(STATS_KLIENCI_CHANNEL_ID, { force: true });
-    await channel.setName('📊 Klienci→' + count);
-    console.log('Statystyki klientow zaktualizowane: ' + count);
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return;
+    const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
+    const channel = guild.channels.cache.get(STATS_KLIENCI_CHANNEL_ID);
+    if (!channel) return;
+    await channel.setName('Klienci' + count);
+    console.log('Statystyki klientow: ' + count);
   } catch (err) {
-    console.error('Blad aktualizacji statystyk klientow:', err.message);
+    console.error('Blad statystyk klientow:', err.message);
   }
 }
 
@@ -148,7 +151,7 @@ function buildVerifyEmbed() {
   return new EmbedBuilder()
     .setColor(0xFFFFFF)
     .setAuthor({ name: 'RAVEN EXCHANGE x Weryfikacja' })
-    .setTitle('Weryfikacja — Raven Exchange')
+    .setTitle('Weryfikacja - Raven Exchange')
     .setDescription(
       '>>> Aby uzyskac dostep do serwera **Raven Exchange**, musisz przejsc proces weryfikacji.\n\n' +
       'Kliknij przycisk ponizej i polacz swoje konto Discord, aby uzyskac dostep do wszystkich kanalow!'
@@ -207,11 +210,19 @@ client.once('ready', async () => {
   console.log('Bot zalogowany jako ' + client.user.tag);
   await initDB();
   await sendOrUpdateVerify();
+
+  // Jednorazowy fetch przy starcie - wypelnia cache, potem juz nie fetchujemy
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (guild) {
+    await guild.members.fetch();
+    console.log('Cache memberow zaladowany: ' + guild.members.cache.size + ' osob');
+  }
+
   await updateKlienciStats();
   setInterval(updateKlienciStats, 30 * 1000);
 });
 
-// ─── AKTUALIZACJA STATYSTYK PRZY ZMIANIE RANGI ────────────────────────────────
+// ─── AKTUALIZACJA PRZY ZMIANIE RANGI ─────────────────────────────────────────
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const hadRole = oldMember.roles.cache.has(KLIENT_ROLE_ID);
   const hasRole = newMember.roles.cache.has(KLIENT_ROLE_ID);
@@ -491,7 +502,7 @@ app.get('/callback', async (req, res) => {
       { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
     );
 
-    // ── Nadanie rangi przez REST API (niezawodne, bez cache) ──────────────────
+    // ── Nadanie rangi przez REST API ──────────────────────────────────────────
     await new Promise(r => setTimeout(r, 1500));
 
     try {
@@ -511,7 +522,7 @@ app.get('/callback', async (req, res) => {
       await logChannel.send({
         embeds: [new EmbedBuilder()
           .setColor(0x000000)
-          .setTitle('Nowa weryfikacja — Raven Exchange')
+          .setTitle('Nowa weryfikacja - Raven Exchange')
           .setThumbnail(avatarUrl)
           .addFields(
             { name: 'Uzytkownik', value: (global_name || username) + ' (`' + username + '`)', inline: true },
@@ -527,7 +538,7 @@ app.get('/callback', async (req, res) => {
 <html lang="pl">
 <head>
   <meta charset="UTF-8">
-  <title>Raven Exchange — Weryfikacja</title>
+  <title>Raven Exchange - Weryfikacja</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
