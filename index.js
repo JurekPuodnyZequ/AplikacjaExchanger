@@ -17,7 +17,7 @@ const { Pool } = require("pg");
 const axios = require("axios");
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-const TOKEN = process.env.DISCORD_TOKEN;
+const TOKEN = process.env.BOT_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI; // np. https://twoja-app.railway.app/callback
