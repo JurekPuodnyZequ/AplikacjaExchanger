@@ -30,7 +30,7 @@ const {
 const REDIRECT_URI      = 'https://aplikacjaexchanger-production.up.railway.app/callback';
 const VERIFY_CHANNEL_ID = '1500246546862833868';
 const VERIFY_ROLE_ID    = ROLE_ID || '1500246544140734613';
-const LOG_CHANNEL_ID    = '1500246546862833868';
+const LOG_CHANNEL_ID    = '1500246545797349542';
 const VERIFY_MSG_KEY    = 'verify_message_id';
 
 const RAVEN_LOGO_URL = 'https://i.imgur.com/sZmJes3.png';
@@ -463,4 +463,3 @@ app.get('/callback', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Serwer HTTP działa na porcie ${PORT}`));
-    
