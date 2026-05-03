@@ -381,6 +381,14 @@ client.on('interactionCreate', async interaction => {
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 client.login(BOT_TOKEN);
 
+// ─── CZYSZCZENIE GLOBALNYCH KOMEND (node index.js --cleanup) ──────────────────
+if (process.argv.includes('--cleanup')) {
+  const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
+  rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] })
+    .then(() => { console.log('Globalne komendy usuniete!'); process.exit(0); })
+    .catch(err => { console.error('Blad czyszczenia:', err); process.exit(1); });
+}
+
 // ─── REJESTRACJA KOMEND (node index.js --setup) ───────────────────────────────
 if (process.argv.includes('--setup')) {
   const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
