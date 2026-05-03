@@ -247,7 +247,8 @@ client.on('interactionCreate', async interaction => {
 
     const targetGuildId = interaction.options.getString('guild_id');
     const tryb          = interaction.options.getString('tryb');
-    const ilosc         = interaction.options.getInteger('ilosc');
+    const iloscRaw      = interaction.options.getString('ilosc');
+    const ilosc         = iloscRaw ? parseInt(iloscRaw) : null;
     const targetUserId  = interaction.options.getString('user_id');
 
     let users = [];
@@ -342,7 +343,7 @@ if (process.argv.includes('--setup')) {
             { name: 'Konkretna osoba (po ID)', value: 'id'     }
           )
       )
-      .addIntegerOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
+.addStringOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
       .addStringOption(opt => opt.setName('user_id').setDescription('ID uzytkownika (tryb id)').setRequired(false))
       .toJSON(),
   ];
