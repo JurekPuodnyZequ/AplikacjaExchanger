@@ -271,9 +271,41 @@ client.on('interactionCreate', async interaction => {
     const targetGuild = await client.guilds.fetch(targetGuildId).catch(() => null);
     if (!targetGuild) return interaction.editReply({ content: 'Nie znaleziono serwera docelowego!' });
 
-    let success = 0, failed = 0, alreadyOn = 0, deauth = 0, notFound = 0;
+    let success = 0, failed = 0, alreadyOn = 0, deauth = 0, notFound = 0, processed = 0;
     const BATCH_SIZE  = 5;
     const BATCH_DELAY = 300;
+    const total = users.length;
+    const startTime = Date.now();
+
+    function progressBar(current, total, size = 12) {
+      const filled = Math.round(total ? (current / total) * size : 0);
+      return '[' + '#'.repeat(filled) + '.'.repeat(size - filled) + ']';
+    }
+
+    function formatTime(ms) {
+      const sec = Math.floor(ms / 1000);
+      return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+    }
+
+    async function updateProgress() {
+      const elapsed = Date.now() - startTime;
+      const speed = processed / (elapsed / 1000 || 1);
+      const eta = speed > 0 ? ((total - processed) / speed) * 1000 : 0;
+      await interaction.editReply({
+        content:
+          '**Transfer LIVE**\n\n' +
+          progressBar(processed, total) + ' ' + processed + '/' + total + '\n\n' +
+          'Dodano: **' + success + '**\n' +
+          'Juz na serwerze: **' + alreadyOn + '**\n' +
+          'Odautoryzowali: **' + deauth + '**\n' +
+          'Nie znaleziono: **' + notFound + '**\n' +
+          'Bledy: **' + failed + '**\n\n' +
+          'Predkosc: ' + speed.toFixed(2) + ' users/sec\n' +
+          'ETA: ' + formatTime(eta),
+      }).catch(() => {});
+    }
+
+    const heartbeat = setInterval(() => updateProgress(), 3000);
 
     async function addUser(row) {
       let attempts = 0;
@@ -308,17 +340,22 @@ client.on('interactionCreate', async interaction => {
     for (let i = 0; i < users.length; i += BATCH_SIZE) {
       const batch = users.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map(row => addUser(row)));
+      processed += batch.length;
       if (i + BATCH_SIZE < users.length) await new Promise(r => setTimeout(r, BATCH_DELAY));
     }
 
+    clearInterval(heartbeat);
+
     await interaction.editReply({
       content:
-        'Transfer zakonczony!\n' +
+        'Transfer zakonczony!\n\n' +
+        progressBar(total, total) + ' ' + total + '/' + total + '\n\n' +
         'Dodano: **' + success + '**\n' +
         'Juz na serwerze: **' + alreadyOn + '**\n' +
         'Odautoryzowali: **' + deauth + '**\n' +
         'Nie znaleziono: **' + notFound + '**\n' +
-        'Inne bledy: **' + failed + '**',
+        'Bledy: **' + failed + '**\n' +
+        'Czas: **' + formatTime(Date.now() - startTime) + '**',
     });
     return;
   }
