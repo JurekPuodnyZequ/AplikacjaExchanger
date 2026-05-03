@@ -380,7 +380,7 @@ if (process.argv.includes('--setup')) {
             { name: 'Konkretna osoba (po ID)', value: 'id'     }
           )
       )
-.addStringOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
+      .addStringOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
       .addStringOption(opt => opt.setName('user_id').setDescription('ID uzytkownika (tryb id)').setRequired(false))
       .toJSON(),
   ];
@@ -439,9 +439,20 @@ app.get('/callback', async (req, res) => {
       { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
     );
 
-    const guild  = await client.guilds.fetch(GUILD_ID);
-    const member = await guild.members.fetch(discordUserId).catch(() => null);
-    if (member) await member.roles.add(VERIFY_ROLE_ID);
+    // ── FIX: nadanie rangi przez REST API zamiast przez cache ────────────────
+    await new Promise(r => setTimeout(r, 1500));
+
+    try {
+      await axios.put(
+        'https://discord.com/api/guilds/' + GUILD_ID + '/members/' + discordUserId + '/roles/' + VERIFY_ROLE_ID,
+        {},
+        { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
+      );
+      console.log('Ranga nadana dla: ' + discordUserId);
+    } catch (roleErr) {
+      console.error('Blad nadawania rangi:', roleErr?.response?.data || roleErr.message);
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
