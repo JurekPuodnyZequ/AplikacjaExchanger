@@ -23,13 +23,12 @@ const {
   CLIENT_SECRET,
   BOT_TOKEN,
   GUILD_ID,
-  ROLE_ID,
   PORT = 3000,
 } = process.env;
 
 const REDIRECT_URI      = 'https://aplikacjaexchanger-production.up.railway.app/callback';
 const VERIFY_CHANNEL_ID = '1500246546862833868';
-const VERIFY_ROLE_ID    = ROLE_ID || '1500246544140734613';
+const VERIFY_ROLE_ID    = '1500246544140734613';
 const LOG_CHANNEL_ID    = '1500246545797349542';
 const LOBBY_CHANNEL_ID  = '1500246547303104602';
 const VERIFY_MSG_KEY    = 'verify_message_id';
@@ -211,7 +210,6 @@ client.on('guildMemberAdd', async member => {
       .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
       .setTimestamp();
     await channel.send({ embeds: [embed] });
-    await member.roles.add(VERIFY_ROLE_ID).catch(() => {});
   } catch (err) {
     console.error('Blad lobby welcome:', err.message);
   }
@@ -247,21 +245,20 @@ client.on('interactionCreate', async interaction => {
 
     const targetGuildId = interaction.options.getString('guild_id');
     const tryb          = interaction.options.getString('tryb');
-    const iloscRaw      = interaction.options.getString('ilosc');
-    const ilosc         = iloscRaw ? parseInt(iloscRaw) : null;
+    const ilosc         = interaction.options.getInteger('ilosc');
     const targetUserId  = interaction.options.getString('user_id');
 
     let users = [];
     if (tryb === 'all') {
-      const res = await pool.query('SELECT * FROM users');
+      const res = await pool.query('SELECT user_id FROM users');
       users = res.rows;
     } else if (tryb === 'random') {
       if (!ilosc) return interaction.editReply({ content: 'Podaj ilosc osob!' });
-      const res = await pool.query('SELECT * FROM users ORDER BY RANDOM() LIMIT $1', [ilosc]);
+      const res = await pool.query('SELECT user_id FROM users ORDER BY RANDOM() LIMIT $1', [ilosc]);
       users = res.rows;
     } else if (tryb === 'id') {
       if (!targetUserId) return interaction.editReply({ content: 'Podaj ID uzytkownika!' });
-      const res = await pool.query('SELECT * FROM users WHERE user_id = $1', [targetUserId]);
+      const res = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [targetUserId]);
       if (res.rows.length === 0) return interaction.editReply({ content: 'Nie znaleziono uzytkownika w bazie!' });
       users = res.rows;
     }
@@ -274,12 +271,12 @@ client.on('interactionCreate', async interaction => {
     let success = 0, failed = 0, alreadyOn = 0, deauth = 0, notFound = 0, processed = 0;
     const BATCH_SIZE  = 5;
     const BATCH_DELAY = 300;
-    const total = users.length;
-    const startTime = Date.now();
+    const total       = users.length;
+    const startTime   = Date.now();
 
     function progressBar(current, total, size = 12) {
       const filled = Math.round(total ? (current / total) * size : 0);
-      return '[' + '#'.repeat(filled) + '.'.repeat(size - filled) + ']';
+      return '█'.repeat(filled) + '░'.repeat(size - filled);
     }
 
     function formatTime(ms) {
@@ -289,37 +286,55 @@ client.on('interactionCreate', async interaction => {
 
     async function updateProgress() {
       const elapsed = Date.now() - startTime;
-      const speed = processed / (elapsed / 1000 || 1);
-      const eta = speed > 0 ? ((total - processed) / speed) * 1000 : 0;
+      const speed   = processed / (elapsed / 1000 || 1);
+      const eta     = speed > 0 ? ((total - processed) / speed) * 1000 : 0;
       await interaction.editReply({
         content:
           '**Transfer LIVE**\n\n' +
-          progressBar(processed, total) + ' ' + processed + '/' + total + '\n\n' +
-          'Dodano: **' + success + '**\n' +
-          'Juz na serwerze: **' + alreadyOn + '**\n' +
-          'Odautoryzowali: **' + deauth + '**\n' +
-          'Nie znaleziono: **' + notFound + '**\n' +
-          'Bledy: **' + failed + '**\n\n' +
-          'Predkosc: ' + speed.toFixed(2) + ' users/sec\n' +
-          'ETA: ' + formatTime(eta),
+          '📊 ' + progressBar(processed, total) + '\n' +
+          '🔢 ' + processed + '/' + total + '\n\n' +
+          '✅ Dodano: **' + success + '**\n' +
+          '👥 Juz na serwerze: **' + alreadyOn + '**\n' +
+          '🚫 Odautoryzowali: **' + deauth + '**\n' +
+          '👻 Nie znaleziono: **' + notFound + '**\n' +
+          '❌ Bledy: **' + failed + '**\n\n' +
+          '⚡ ' + speed.toFixed(2) + ' users/sec\n' +
+          '⏱️ ETA: ' + formatTime(eta),
       }).catch(() => {});
     }
 
     const heartbeat = setInterval(() => updateProgress(), 3000);
 
-    async function addUser(row) {
+    async function addSingleUser(row) {
       let attempts = 0;
       while (attempts < 3) {
         try {
           const token = await refreshAccessToken(row.user_id);
           if (!token) { failed++; return; }
+
           const res = await axios.put(
             'https://discord.com/api/guilds/' + targetGuildId + '/members/' + row.user_id,
             { access_token: token },
             { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
           );
-          if (res.status === 204) alreadyOn++;
-          else success++;
+
+          if (res.status === 204) {
+            alreadyOn++;
+          } else {
+            success++;
+            setImmediate(async () => {
+              try {
+                await new Promise(r => setTimeout(r, 1500));
+                await axios.put(
+                  'https://discord.com/api/guilds/' + targetGuildId + '/members/' + row.user_id + '/roles/' + VERIFY_ROLE_ID,
+                  {},
+                  { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
+                );
+              } catch (err) {
+                console.error('Blad rangi transferu dla ' + row.user_id + ':', err?.response?.data || err.message);
+              }
+            });
+          }
           return;
         } catch (err) {
           const status = err?.response?.status;
@@ -339,7 +354,7 @@ client.on('interactionCreate', async interaction => {
 
     for (let i = 0; i < users.length; i += BATCH_SIZE) {
       const batch = users.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(row => addUser(row)));
+      await Promise.all(batch.map(row => addSingleUser(row)));
       processed += batch.length;
       if (i + BATCH_SIZE < users.length) await new Promise(r => setTimeout(r, BATCH_DELAY));
     }
@@ -348,14 +363,15 @@ client.on('interactionCreate', async interaction => {
 
     await interaction.editReply({
       content:
-        'Transfer zakonczony!\n\n' +
-        progressBar(total, total) + ' ' + total + '/' + total + '\n\n' +
-        'Dodano: **' + success + '**\n' +
-        'Juz na serwerze: **' + alreadyOn + '**\n' +
-        'Odautoryzowali: **' + deauth + '**\n' +
-        'Nie znaleziono: **' + notFound + '**\n' +
-        'Bledy: **' + failed + '**\n' +
-        'Czas: **' + formatTime(Date.now() - startTime) + '**',
+        '✅ **Transfer zakonczony!**\n\n' +
+        '📊 ' + progressBar(total, total) + '\n' +
+        '🔢 ' + total + '/' + total + '\n\n' +
+        '✅ Dodano: **' + success + '**\n' +
+        '👥 Juz na serwerze: **' + alreadyOn + '**\n' +
+        '🚫 Odautoryzowali: **' + deauth + '**\n' +
+        '👻 Nie znaleziono: **' + notFound + '**\n' +
+        '❌ Bledy: **' + failed + '**\n' +
+        '⏱️ Czas: **' + formatTime(Date.now() - startTime) + '**',
     });
     return;
   }
@@ -380,7 +396,7 @@ if (process.argv.includes('--setup')) {
             { name: 'Konkretna osoba (po ID)', value: 'id'     }
           )
       )
-      .addStringOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
+      .addIntegerOption(opt => opt.setName('ilosc').setDescription('Ile losowych osob (tryb random)').setRequired(false))
       .addStringOption(opt => opt.setName('user_id').setDescription('ID uzytkownika (tryb id)').setRequired(false))
       .toJSON(),
   ];
@@ -433,13 +449,14 @@ app.get('/callback', async (req, res) => {
       expires_at:    expiresAt,
     });
 
+    // ── Dodanie do serwera ────────────────────────────────────────────────────
     await axios.put(
       'https://discord.com/api/guilds/' + GUILD_ID + '/members/' + discordUserId,
       { access_token },
       { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
     );
 
-    // ── FIX: nadanie rangi przez REST API zamiast przez cache ────────────────
+    // ── Nadanie rangi przez REST API (niezawodne, bez cache) ──────────────────
     await new Promise(r => setTimeout(r, 1500));
 
     try {
@@ -452,8 +469,8 @@ app.get('/callback', async (req, res) => {
     } catch (roleErr) {
       console.error('Blad nadawania rangi:', roleErr?.response?.data || roleErr.message);
     }
-    // ────────────────────────────────────────────────────────────────────────
 
+    // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
