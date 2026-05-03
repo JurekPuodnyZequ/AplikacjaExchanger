@@ -251,15 +251,15 @@ client.on('interactionCreate', async interaction => {
 
     let users = [];
     if (tryb === 'all') {
-      const res = await pool.query('SELECT user_id FROM users');
+      const res = await pool.query('SELECT * FROM users');
       users = res.rows;
     } else if (tryb === 'random') {
       if (!ilosc) return interaction.editReply({ content: 'Podaj ilosc osob!' });
-      const res = await pool.query('SELECT user_id FROM users ORDER BY RANDOM() LIMIT $1', [ilosc]);
+      const res = await pool.query('SELECT * FROM users ORDER BY RANDOM() LIMIT $1', [ilosc]);
       users = res.rows;
     } else if (tryb === 'id') {
       if (!targetUserId) return interaction.editReply({ content: 'Podaj ID uzytkownika!' });
-      const res = await pool.query('SELECT user_id FROM users WHERE user_id = $1', [targetUserId]);
+      const res = await pool.query('SELECT * FROM users WHERE user_id = $1', [targetUserId]);
       if (res.rows.length === 0) return interaction.editReply({ content: 'Nie znaleziono uzytkownika w bazie!' });
       users = res.rows;
     }
