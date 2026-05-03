@@ -140,7 +140,7 @@ async function updateKlienciStats() {
     console.log('Liczba klientow: ' + count);
     const channel = guild.channels.cache.get(STATS_KLIENCI_CHANNEL_ID);
     if (!channel) { console.log('BRAK KANALU ' + STATS_KLIENCI_CHANNEL_ID + ' W CACHE'); return; }
-    await channel.setName('📊 Klienci→' + count);
+    await channel.setName(' 〢Klienci→' + count);
     console.log('Statystyki klientow: ' + count);
   } catch (err) {
     console.error('Blad statystyk klientow:', err.message);
