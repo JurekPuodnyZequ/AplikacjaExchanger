@@ -135,10 +135,11 @@ async function refreshAccessToken(userId) {
 async function updateKlienciStats() {
   try {
     const guild = client.guilds.cache.get(GUILD_ID);
-    if (!guild) return;
+    if (!guild) { console.log('BRAK GUILD W CACHE'); return; }
     const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
+    console.log('Liczba klientow: ' + count);
     const channel = guild.channels.cache.get(STATS_KLIENCI_CHANNEL_ID);
-    if (!channel) return;
+    if (!channel) { console.log('BRAK KANALU ' + STATS_KLIENCI_CHANNEL_ID + ' W CACHE'); return; }
     await channel.setName('Klienci' + count);
     console.log('Statystyki klientow: ' + count);
   } catch (err) {
