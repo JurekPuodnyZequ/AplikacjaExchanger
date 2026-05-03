@@ -33,6 +33,9 @@ const LOG_CHANNEL_ID    = '1500246545797349542';
 const LOBBY_CHANNEL_ID  = '1500246547303104602';
 const VERIFY_MSG_KEY    = 'verify_message_id';
 
+const STATS_KLIENCI_CHANNEL_ID = '1500246545466003498';
+const KLIENT_ROLE_ID           = '1500246544178479156';
+
 const RAVEN_LOGO_URL = 'https://i.imgur.com/sZmJes3.png';
 const CAT_GIF_URL    = 'https://i.imgur.com/m5FDtug.gif';
 
@@ -126,6 +129,20 @@ async function refreshAccessToken(userId) {
   }
 }
 
+// ─── STATYSTYKI KLIENTÓW ───────────────────────────────────────────────────────
+async function updateKlienciStats() {
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.members.fetch();
+    const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
+    const channel = await client.channels.fetch(STATS_KLIENCI_CHANNEL_ID);
+    await channel.setName('📊 Klienci→' + count);
+    console.log('Statystyki klientow zaktualizowane: ' + count);
+  } catch (err) {
+    console.error('Blad aktualizacji statystyk klientow:', err.message);
+  }
+}
+
 // ─── WERYFIKACJA EMBED ─────────────────────────────────────────────────────────
 function buildVerifyEmbed() {
   return new EmbedBuilder()
@@ -190,6 +207,15 @@ client.once('ready', async () => {
   console.log('Bot zalogowany jako ' + client.user.tag);
   await initDB();
   await sendOrUpdateVerify();
+  await updateKlienciStats();
+  setInterval(updateKlienciStats, 10 * 60 * 1000);
+});
+
+// ─── AKTUALIZACJA STATYSTYK PRZY ZMIANIE RANGI ────────────────────────────────
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+  const hadRole = oldMember.roles.cache.has(KLIENT_ROLE_ID);
+  const hasRole = newMember.roles.cache.has(KLIENT_ROLE_ID);
+  if (hadRole !== hasRole) await updateKlienciStats();
 });
 
 // ─── LOBBY: powitanie ─────────────────────────────────────────────────────────
