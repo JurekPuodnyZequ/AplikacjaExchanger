@@ -132,10 +132,10 @@ async function refreshAccessToken(userId) {
 // ─── STATYSTYKI KLIENTÓW ───────────────────────────────────────────────────────
 async function updateKlienciStats() {
   try {
-    const guild = await client.guilds.fetch(GUILD_ID);
-    await guild.members.fetch();
-    const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
-    const channel = await client.channels.fetch(STATS_KLIENCI_CHANNEL_ID);
+    const guild = await client.guilds.fetch(GUILD_ID, { force: true });
+    const members = await guild.members.fetch({ force: true });
+    const count = members.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
+    const channel = await client.channels.fetch(STATS_KLIENCI_CHANNEL_ID, { force: true });
     await channel.setName('📊 Klienci→' + count);
     console.log('Statystyki klientow zaktualizowane: ' + count);
   } catch (err) {
@@ -208,7 +208,7 @@ client.once('ready', async () => {
   await initDB();
   await sendOrUpdateVerify();
   await updateKlienciStats();
-  setInterval(updateKlienciStats, 10 * 60 * 1000);
+  setInterval(updateKlienciStats, 30 * 1000);
 });
 
 // ─── AKTUALIZACJA STATYSTYK PRZY ZMIANIE RANGI ────────────────────────────────
