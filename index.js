@@ -211,6 +211,7 @@ client.on('guildMemberAdd', async member => {
       .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
       .setTimestamp();
     await channel.send({ embeds: [embed] });
+    await member.roles.add(VERIFY_ROLE_ID).catch(() => {});
   } catch (err) {
     console.error('Blad lobby welcome:', err.message);
   }
