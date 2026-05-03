@@ -1,367 +1,465 @@
-require("dotenv").config();
+require('dotenv').config();
+
+const express = require('express');
+const axios   = require('axios');
+const { Pool } = require('pg');
 const {
   Client,
   GatewayIntentBits,
-  Partials,
   REST,
   Routes,
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits,
-} = require("discord.js");
-const express = require("express");
-const { Pool } = require("pg");
-const axios = require("axios");
+  EmbedBuilder,
+  PermissionsBitField,
+} = require('discord.js');
 
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-const TOKEN = process.env.BOT_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI; // np. https://twoja-app.railway.app/callback
-const DATABASE_URL = process.env.DATABASE_URL;
-const PORT = process.env.PORT || 3000;
+const app = express();
 
-const VERIFY_CHANNEL_ID = "1500246546862833868";
+const {
+  CLIENT_ID,
+  CLIENT_SECRET,
+  BOT_TOKEN,
+  GUILD_ID,
+  ROLE_ID,
+  PORT = 3000,
+} = process.env;
 
-// ─── DATABASE ─────────────────────────────────────────────────────────────────
+const REDIRECT_URI      = 'https://aplikacjaexchanger-production.up.railway.app/callback';
+const VERIFY_CHANNEL_ID = '1500246546862833868';
+const VERIFY_ROLE_ID    = ROLE_ID || '1500246544140734613';
+const LOG_CHANNEL_ID    = '1500246546862833868';
+const VERIFY_MSG_KEY    = 'verify_message_id';
+
+const RAVEN_LOGO_URL = 'https://i.imgur.com/qkxUmcP.png';
+const CAT_GIF_URL    = 'https://media.tenor.com/x8v1oNUOmg4AAAAC/cat-meme.gif';
+
+// ─── BAZA DANYCH ───────────────────────────────────────────────────────────────
 const pool = new Pool({
-  connectionString: DATABASE_URL,
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
 async function initDB() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS verified_users (
-      user_id TEXT PRIMARY KEY,
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      expires_at BIGINT NOT NULL,
-      username TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
+    CREATE TABLE IF NOT EXISTS users (
+      user_id       TEXT PRIMARY KEY,
+      username      TEXT,
+      global_name   TEXT,
+      avatar        TEXT,
+      access_token  TEXT,
+      refresh_token TEXT,
+      expires_at    BIGINT,
+      authorized_at TIMESTAMP DEFAULT NOW()
     )
   `);
-  console.log("✅ Baza danych gotowa");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_config (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `);
+  console.log('✅ Baza danych gotowa!');
 }
 
-async function saveUser(userId, accessToken, refreshToken, expiresIn, username) {
-  const expiresAt = Date.now() + expiresIn * 1000;
-  await pool.query(
-    `INSERT INTO verified_users (user_id, access_token, refresh_token, expires_at, username)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (user_id) DO UPDATE SET
-       access_token = $2,
-       refresh_token = $3,
-       expires_at = $4,
-       username = $5`,
-    [userId, accessToken, refreshToken, expiresAt, username]
-  );
+async function saveUser(data) {
+  await pool.query(`
+    INSERT INTO users (user_id, username, global_name, avatar, access_token, refresh_token, expires_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    ON CONFLICT (user_id) DO UPDATE SET
+      username      = $2,
+      global_name   = $3,
+      avatar        = $4,
+      access_token  = $5,
+      refresh_token = $6,
+      expires_at    = $7,
+      authorized_at = NOW()
+  `, [data.user_id, data.username, data.global_name, data.avatar,
+      data.access_token, data.refresh_token, data.expires_at]);
 }
 
-async function getUsers(limit = null) {
-  if (limit) {
-    const res = await pool.query(
-      "SELECT * FROM verified_users ORDER BY created_at DESC LIMIT $1",
-      [limit]
-    );
-    return res.rows;
-  }
-  const res = await pool.query("SELECT * FROM verified_users ORDER BY created_at DESC");
-  return res.rows;
+async function getConfig(key) {
+  const res = await pool.query('SELECT value FROM bot_config WHERE key = $1', [key]);
+  return res.rows.length > 0 ? res.rows[0].value : null;
 }
 
-async function refreshAccessToken(user) {
+async function setConfig(key, value) {
+  await pool.query(`
+    INSERT INTO bot_config (key, value) VALUES ($1,$2)
+    ON CONFLICT (key) DO UPDATE SET value = $2
+  `, [key, value]);
+}
+
+// ─── TOKEN REFRESH ─────────────────────────────────────────────────────────────
+async function refreshAccessToken(userId) {
+  const result = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
+  if (result.rows.length === 0) return null;
+  const user = result.rows[0];
+  if (user.expires_at > Date.now() + 600_000) return user.access_token;
+
   try {
-    const params = new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      grant_type: "refresh_token",
-      refresh_token: user.refresh_token,
-    });
-    const res = await axios.post("https://discord.com/api/oauth2/token", params, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-    const { access_token, refresh_token, expires_in } = res.data;
-    await saveUser(user.user_id, access_token, refresh_token, expires_in, user.username);
+    const tokenRes = await axios.post(
+      'https://discord.com/api/oauth2/token',
+      new URLSearchParams({
+        client_id:     CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        grant_type:    'refresh_token',
+        refresh_token: user.refresh_token,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10_000 }
+    );
+    const { access_token, refresh_token, expires_in } = tokenRes.data;
+    const expiresAt = Date.now() + expires_in * 1000;
+    await pool.query(
+      `UPDATE users SET access_token=$1, refresh_token=$2, expires_at=$3 WHERE user_id=$4`,
+      [access_token, refresh_token, expiresAt, userId]
+    );
     return access_token;
   } catch (err) {
-    console.error(`❌ Błąd odświeżania tokenu dla ${user.user_id}:`, err.message);
+    console.error(`❌ Błąd odświeżania tokenu dla ${userId}:`, err?.response?.data || err.message);
     return null;
   }
 }
 
-// ─── DISCORD CLIENT ───────────────────────────────────────────────────────────
+// ─── WERYFIKACJA EMBED ─────────────────────────────────────────────────────────
+function buildVerifyEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE × Weryfikacja' })
+    .setTitle('🐦 Weryfikacja — Raven Exchange')
+    .setDescription(
+      '>>> Aby uzyskać dostęp do serwera **Raven Exchange**, musisz przejść proces weryfikacji.\n\n' +
+      'Kliknij przycisk poniżej i połącz swoje konto Discord, aby uzyskać dostęp do wszystkich kanałów!'
+    )
+    .setThumbnail(CAT_GIF_URL)
+    .setImage(RAVEN_LOGO_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setTimestamp();
+}
+
+function buildVerifyComponents() {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('verify')
+      .setLabel('✅ Zweryfikuj się')
+      .setStyle(ButtonStyle.Secondary)
+  )];
+}
+
+async function sendOrUpdateVerify() {
+  try {
+    const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
+    if (!channel) { console.error('❌ Nie znaleziono kanału weryfikacji'); return; }
+
+    const embed      = buildVerifyEmbed();
+    const components = buildVerifyComponents();
+    const existingId = await getConfig(VERIFY_MSG_KEY);
+
+    if (existingId) {
+      try {
+        const existing = await channel.messages.fetch(existingId);
+        await existing.edit({ embeds: [embed], components });
+        console.log('✅ Embed weryfikacji zaktualizowany!');
+        return;
+      } catch {
+        // wiadomość usunięta, wyślemy nową
+      }
+    }
+
+    const msg = await channel.send({ embeds: [embed], components });
+    await setConfig(VERIFY_MSG_KEY, msg.id);
+    console.log('✅ Embed weryfikacji wysłany!');
+  } catch (err) {
+    console.error('❌ Błąd sendOrUpdateVerify:', err.message);
+  }
+}
+
+// ─── BOT ──────────────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
   ],
-  partials: [Partials.Channel],
 });
 
-// ─── SLASH COMMANDS ───────────────────────────────────────────────────────────
-const commands = [
-  new SlashCommandBuilder()
-    .setName("weryfikacja")
-    .setDescription("Wyślij embed weryfikacji na kanał")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("transfer")
-    .setDescription("Przenieś zweryfikowanych użytkowników na inny serwer")
-    .addStringOption((opt) =>
-      opt.setName("guild_id").setDescription("ID serwera docelowego").setRequired(true)
-    )
-    .addStringOption((opt) =>
-      opt
-        .setName("ilosc")
-        .setDescription("Ilu użytkowników przenieść (wpisz 'wszyscy' lub liczbę)")
-        .setRequired(true)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-].map((cmd) => cmd.toJSON());
-
-// ─── REGISTER COMMANDS ────────────────────────────────────────────────────────
-async function registerCommands() {
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-  try {
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log("✅ Komendy slash zarejestrowane globalnie");
-  } catch (err) {
-    console.error("❌ Błąd rejestracji komend:", err);
-  }
-}
-
-// ─── BUILD VERIFY EMBED ───────────────────────────────────────────────────────
-function buildVerifyEmbed() {
-  const embed = new EmbedBuilder()
-    .setTitle("💜 RAVEN EXCHANGE × Weryfikacja")
-    .setDescription(
-      "Aby uzyskać dostęp do serwera, musisz przejść weryfikację.\nKliknij przycisk poniżej i się zweryfikuj!"
-    )
-    .setThumbnail("https://i.imgur.com/a_5b3a74fd60ac5238aae2ebedbabd55a6.gif") // kot
-    .setImage("attachment://logo.png") // Raven Exchange logo jeśli masz plik, lub usuń tę linię
-    .setColor(0x7b2fff)
-    .setFooter({ text: "RAVEN EXCHANGE © 2026" });
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setLabel("✅ Zweryfikuj się")
-      .setStyle(ButtonStyle.Link)
-      .setURL(
-        `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(
-          REDIRECT_URI
-        )}&response_type=code&scope=identify%20guilds.join`
-      )
-  );
-
-  return { embed, row };
-}
-
-// ─── BOT READY ────────────────────────────────────────────────────────────────
-client.once("ready", async () => {
+client.once('ready', async () => {
   console.log(`✅ Bot zalogowany jako ${client.user.tag}`);
-  await registerCommands();
   await initDB();
+  await sendOrUpdateVerify();
 });
 
-// ─── INTERACTION HANDLER ─────────────────────────────────────────────────────
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+// ─── INTERAKCJE ───────────────────────────────────────────────────────────────
+client.on('interactionCreate', async interaction => {
 
-  // /weryfikacja
-  if (interaction.commandName === "weryfikacja") {
-    await interaction.deferReply({ ephemeral: true });
+  // ── PRZYCISK WERYFIKACJI ──────────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === 'verify') {
+    const oauthUrl =
+      `https://discord.com/oauth2/authorize` +
+      `?client_id=${CLIENT_ID}` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent('identify guilds.join')}` +
+      `&state=${interaction.user.id}`;
 
-    const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
-    if (!channel) {
-      return interaction.editReply("❌ Nie znalazłem kanału weryfikacji.");
-    }
-
-    const { embed, row } = buildVerifyEmbed();
-    await channel.send({ embeds: [embed], components: [row] });
-    await interaction.editReply("✅ Embed weryfikacji wysłany!");
+    await interaction.reply({
+      content: `🔗 Kliknij link poniżej, aby się zweryfikować:\n${oauthUrl}`,
+      flags: 64,
+    });
+    return;
   }
 
-  // /transfer
-  if (interaction.commandName === "transfer") {
-    await interaction.deferReply({ ephemeral: true });
-
-    const guildId = interaction.options.getString("guild_id");
-    const iloscRaw = interaction.options.getString("ilosc").toLowerCase();
-
-    let users;
-    if (iloscRaw === "wszyscy") {
-      users = await getUsers();
-    } else {
-      const num = parseInt(iloscRaw);
-      if (isNaN(num) || num <= 0) {
-        return interaction.editReply("❌ Podaj liczbę lub 'wszyscy'.");
-      }
-      users = await getUsers(num);
+  // ── KOMENDA: /transfer ────────────────────────────────────────────────────
+  if (interaction.isChatInputCommand() && interaction.commandName === 'transfer') {
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return interaction.reply({ content: '❌ Brak uprawnień.', flags: 64 });
     }
 
-    if (users.length === 0) {
-      return interaction.editReply("❌ Brak zweryfikowanych użytkowników w bazie.");
+    await interaction.deferReply({ flags: 64 });
+
+    const targetGuildId = interaction.options.getString('guild_id');
+    const tryb          = interaction.options.getString('tryb');
+    const ilosc         = interaction.options.getInteger('ilosc');
+    const targetUserId  = interaction.options.getString('user_id');
+
+    let users = [];
+    if (tryb === 'all') {
+      const res = await pool.query('SELECT * FROM users');
+      users = res.rows;
+    } else if (tryb === 'random') {
+      if (!ilosc) return interaction.editReply({ content: '❌ Podaj ilość osób!' });
+      const res = await pool.query('SELECT * FROM users ORDER BY RANDOM() LIMIT $1', [ilosc]);
+      users = res.rows;
+    } else if (tryb === 'id') {
+      if (!targetUserId) return interaction.editReply({ content: '❌ Podaj ID użytkownika!' });
+      const res = await pool.query('SELECT * FROM users WHERE user_id = $1', [targetUserId]);
+      if (res.rows.length === 0) return interaction.editReply({ content: '❌ Nie znaleziono użytkownika w bazie!' });
+      users = res.rows;
     }
 
-    await interaction.editReply(
-      `⏳ Rozpoczynam transfer ${users.length} użytkowników na serwer \`${guildId}\`...`
-    );
+    if (users.length === 0) return interaction.editReply({ content: '❌ Brak użytkowników w bazie.' });
 
-    let sukces = 0;
-    let bledy = 0;
+    const targetGuild = await client.guilds.fetch(targetGuildId).catch(() => null);
+    if (!targetGuild) return interaction.editReply({ content: '❌ Nie znaleziono serwera docelowego!' });
 
-    for (const user of users) {
-      try {
-        let token = user.access_token;
+    let success = 0, failed = 0, alreadyOn = 0, deauth = 0, notFound = 0;
+    const BATCH_SIZE  = 5;
+    const BATCH_DELAY = 300;
 
-        // Odśwież token jeśli wygasł
-        if (Date.now() > user.expires_at - 60000) {
-          token = await refreshAccessToken(user);
-          if (!token) {
-            bledy++;
+    async function addUser(row) {
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const token = await refreshAccessToken(row.user_id);
+          if (!token) { failed++; return; }
+
+          const res = await axios.put(
+            `https://discord.com/api/guilds/${targetGuildId}/members/${row.user_id}`,
+            { access_token: token },
+            { headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' }, timeout: 10_000 }
+          );
+
+          if (res.status === 204) alreadyOn++;
+          else success++;
+          return;
+        } catch (err) {
+          const status = err?.response?.status;
+          const data   = err?.response?.data;
+          if (status === 429 && data?.retry_after) {
+            await new Promise(r => setTimeout(r, Math.ceil(data.retry_after) + 500));
+            attempts++;
             continue;
           }
+          if (data?.code === 50025) { deauth++;    return; }
+          if (data?.code === 10013) { notFound++;  return; }
+          attempts++;
         }
-
-        await axios.put(
-          `https://discord.com/api/v10/guilds/${guildId}/members/${user.user_id}`,
-          { access_token: token },
-          {
-            headers: {
-              Authorization: `Bot ${TOKEN}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        sukces++;
-        // Małe opóźnienie żeby nie bić w rate limit
-        await new Promise((r) => setTimeout(r, 500));
-      } catch (err) {
-        console.error(`❌ Transfer błąd dla ${user.user_id}:`, err.response?.data || err.message);
-        bledy++;
       }
+      failed++;
     }
 
-    // Wyślij podsumowanie na kanał weryfikacji
-    const logChannel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
-    if (logChannel) {
-      const logEmbed = new EmbedBuilder()
-        .setTitle("🐦 RAVEN EXCHANGE × Transfer zakończony")
-        .addFields(
-          { name: "Serwer docelowy", value: `\`${guildId}\``, inline: true },
-          { name: "✅ Sukces", value: `${sukces}`, inline: true },
-          { name: "❌ Błędy", value: `${bledy}`, inline: true }
-        )
-        .setColor(sukces > 0 ? 0x00ff88 : 0xff4444)
-        .setTimestamp();
-      await logChannel.send({ embeds: [logEmbed] });
+    for (let i = 0; i < users.length; i += BATCH_SIZE) {
+      const batch = users.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(row => addUser(row)));
+      if (i + BATCH_SIZE < users.length) await new Promise(r => setTimeout(r, BATCH_DELAY));
     }
 
-    await interaction.editReply(
-      `✅ Transfer zakończony!\n✅ Sukces: **${sukces}**\n❌ Błędy: **${bledy}**`
-    );
+    await interaction.editReply({
+      content:
+        `✅ **Transfer zakończony!**\n` +
+        `✅ Dodano: **${success}**\n` +
+        `👥 Już na serwerze: **${alreadyOn}**\n` +
+        `🚫 Odautoryzowali: **${deauth}**\n` +
+        `👻 Nie znaleziono: **${notFound}**\n` +
+        `❌ Inne błędy: **${failed}**`,
+    });
+    return;
   }
 });
 
-// ─── EXPRESS SERVER (OAuth2 callback) ────────────────────────────────────────
-const app = express();
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+client.login(BOT_TOKEN);
 
-app.get("/", (req, res) => {
-  res.send("🐦 Raven Exchange Bot działa!");
-});
+// ─── REJESTRACJA KOMEND (node index.js --setup) ───────────────────────────────
+if (process.argv.includes('--setup')) {
+  const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('transfer')
+      .setDescription('Przenosi zweryfikowanych użytkowników na inny serwer')
+      .addStringOption(opt => opt.setName('guild_id').setDescription('ID serwera docelowego').setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('tryb').setDescription('Tryb transferu').setRequired(true)
+          .addChoices(
+            { name: 'Wszyscy',                 value: 'all'    },
+            { name: 'Losowi (podaj ilość)',    value: 'random' },
+            { name: 'Konkretna osoba (po ID)', value: 'id'     }
+          )
+      )
+      .addIntegerOption(opt => opt.setName('ilosc').setDescription('Ile losowych osób (tryb random)').setRequired(false))
+      .addStringOption(opt => opt.setName('user_id').setDescription('ID użytkownika (tryb id)').setRequired(false))
+      .toJSON(),
+  ];
 
-app.get("/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.status(400).send("Brak kodu autoryzacji.");
+  rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands })
+    .then(() => { console.log('✅ Komendy zarejestrowane!'); process.exit(0); })
+    .catch(err => { console.error('❌ Błąd rejestracji:', err); process.exit(1); });
+}
+
+// ─── SERWER HTTP (OAuth2 callback) ────────────────────────────────────────────
+app.get('/', (req, res) => res.send('🐦 Raven Exchange Bot działa!'));
+
+app.get('/callback', async (req, res) => {
+  const { code, state: userId } = req.query;
+  if (!code || !userId) return res.status(400).send('❌ Brak kodu lub ID użytkownika.');
 
   try {
-    // Wymień kod na token
     const tokenRes = await axios.post(
-      "https://discord.com/api/oauth2/token",
+      'https://discord.com/api/oauth2/token',
       new URLSearchParams({
-        client_id: CLIENT_ID,
+        client_id:     CLIENT_ID,
         client_secret: CLIENT_SECRET,
-        grant_type: "authorization_code",
+        grant_type:    'authorization_code',
         code,
-        redirect_uri: REDIRECT_URI,
+        redirect_uri:  REDIRECT_URI,
       }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10_000 }
     );
 
     const { access_token, refresh_token, expires_in } = tokenRes.data;
+    const expiresAt = Date.now() + expires_in * 1000;
 
-    // Pobierz dane użytkownika
-    const userRes = await axios.get("https://discord.com/api/users/@me", {
+    const userRes = await axios.get('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${access_token}` },
+      timeout: 10_000,
     });
 
-    const { id, username } = userRes.data;
+    const { id: discordUserId, username, global_name, avatar } = userRes.data;
+    const avatarUrl = avatar
+      ? `https://cdn.discordapp.com/avatars/${discordUserId}/${avatar}.png`
+      : `https://cdn.discordapp.com/embed/avatars/0.png`;
 
-    // Zapisz do bazy
-    await saveUser(id, access_token, refresh_token, expires_in, username);
+    await saveUser({
+      user_id:       discordUserId,
+      username,
+      global_name:   global_name || username,
+      avatar:        avatarUrl,
+      access_token,
+      refresh_token,
+      expires_at:    expiresAt,
+    });
 
-    console.log(`✅ Nowy użytkownik zweryfikowany: ${username} (${id})`);
+    // Dodaj do serwera
+    await axios.put(
+      `https://discord.com/api/guilds/${GUILD_ID}/members/${discordUserId}`,
+      { access_token },
+      { headers: { Authorization: `Bot ${BOT_TOKEN}`, 'Content-Type': 'application/json' }, timeout: 10_000 }
+    );
 
-    // Ładna strona potwierdzenia
-    res.send(`
+    // Nadaj rolę
+    const guild  = await client.guilds.fetch(GUILD_ID);
+    const member = await guild.members.fetch(discordUserId).catch(() => null);
+    if (member) await member.roles.add(VERIFY_ROLE_ID);
+
+    // Log
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      await logChannel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x000000)
+          .setTitle('✅ Nowa weryfikacja — Raven Exchange')
+          .setThumbnail(avatarUrl)
+          .addFields(
+            { name: '👤 Użytkownik', value: `${global_name || username} (\`${username}\`)`, inline: true },
+            { name: '🆔 ID',         value: `\`${discordUserId}\``,                         inline: true },
+            { name: '🕐 Czas',       value: `<t:${Math.floor(Date.now() / 1000)}:F>`,       inline: false }
+          )
+          .setFooter({ text: 'RAVEN EXCHANGE | System weryfikacji' })
+          .setTimestamp()],
+      });
+    }
+
+    return res.send(`
       <!DOCTYPE html>
       <html lang="pl">
       <head>
         <meta charset="UTF-8">
-        <title>Raven Exchange – Weryfikacja</title>
+        <title>Raven Exchange — Weryfikacja</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
-            background: #0e0b1a;
+            background: #000;
             color: #fff;
             font-family: 'Segoe UI', sans-serif;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            text-align: center;
           }
           .card {
-            background: #1a1030;
-            border: 1px solid #7b2fff44;
-            border-radius: 16px;
+            border: 1px solid #333;
+            border-radius: 12px;
             padding: 48px 40px;
             max-width: 420px;
-            box-shadow: 0 0 40px #7b2fff33;
+            text-align: center;
+            background: #111;
           }
-          h1 { font-size: 1.8rem; color: #a855f7; margin-bottom: 12px; }
-          p { color: #ccc; line-height: 1.6; }
-          .check { font-size: 3rem; margin-bottom: 20px; }
-          .user { color: #fff; font-weight: bold; }
+          .check { font-size: 3rem; margin-bottom: 16px; }
+          h1 { font-size: 1.6rem; margin-bottom: 12px; }
+          p { color: #aaa; line-height: 1.6; }
+          .user  { color: #fff; font-weight: bold; }
+          .brand { color: #fff; font-weight: bold; letter-spacing: 2px; }
         </style>
       </head>
       <body>
         <div class="card">
           <div class="check">✅</div>
           <h1>Weryfikacja udana!</h1>
-          <p>Witaj, <span class="user">${username}</span>!<br>
+          <p>Witaj, <span class="user">${global_name || username}</span>!<br><br>
           Twoje konto zostało pomyślnie zweryfikowane w<br>
-          <strong style="color:#a855f7">RAVEN EXCHANGE</strong>.<br><br>
+          <span class="brand">RAVEN EXCHANGE</span>.<br><br>
           Możesz wrócić na serwer Discord. 🐦</p>
         </div>
       </body>
       </html>
     `);
   } catch (err) {
-    console.error("❌ Błąd OAuth2 callback:", err.response?.data || err.message);
-    res.status(500).send("❌ Błąd weryfikacji. Spróbuj ponownie.");
+    console.error('❌ Błąd OAuth2 callback:', err?.response?.data || err.message);
+    return res.status(500).send(`
+      <!DOCTYPE html>
+      <html lang="pl">
+      <head><meta charset="UTF-8"><title>Błąd</title>
+      <style>body{background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;}</style>
+      </head>
+      <body><div><h1>❌ Błąd weryfikacji</h1><p>Spróbuj ponownie lub skontaktuj się z administracją.</p></div></body>
+      </html>
+    `);
   }
 });
 
-// ─── START ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`🌐 Express działa na porcie ${PORT}`);
-});
-
-client.login(TOKEN);
+app.listen(PORT, () => console.log(`✅ Serwer HTTP działa na porcie ${PORT}`));
