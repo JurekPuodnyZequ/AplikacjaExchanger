@@ -130,8 +130,6 @@ async function refreshAccessToken(userId) {
 }
 
 // ─── STATYSTYKI KLIENTOW ───────────────────────────────────────────────────────
-// Tylko cache - zero fetchy, zero rate limitow.
-// Cache jest aktualny dzieki GuildMembers intent + guildMemberUpdate event.
 async function updateKlienciStats() {
   try {
     const guild = client.guilds.cache.get(GUILD_ID);
@@ -204,6 +202,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
@@ -212,7 +211,6 @@ client.once('ready', async () => {
   await initDB();
   await sendOrUpdateVerify();
 
-  // Jednorazowy fetch przy starcie - wypelnia cache, potem juz nie fetchujemy
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
     await guild.members.fetch();
@@ -250,6 +248,49 @@ client.on('guildMemberAdd', async member => {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Blad lobby welcome:', err.message);
+  }
+});
+
+// ─── ANTI-INVITE ──────────────────────────────────────────────────────────────
+const DISCORD_LINK_REGEX = /(discord\.gg\/|discord\.com\/invite\/|dsc\.gg\/)/i;
+
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  if (!message.guild) return;
+  if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+  if (message.guild.ownerId === message.author.id) return;
+  if (!DISCORD_LINK_REGEX.test(message.content)) return;
+
+  try {
+    await message.delete();
+
+    await message.author.send(
+      '🚫 **Nie wysyłaj linków do innych serwerów Discord!**\nZa karę dostajesz przerwę na **7 dni**. Przemyśl co zrobiłeś.'
+    ).catch(() => {});
+
+    await message.member.timeout(7 * 24 * 60 * 60 * 1000, 'Wysłanie linku do Discorda');
+
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      await logChannel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('🔨 Timeout za link do Discorda')
+          .setThumbnail(message.author.displayAvatarURL())
+          .addFields(
+            { name: 'Użytkownik', value: message.author.tag + ' (<@' + message.author.id + '>)', inline: true },
+            { name: 'ID',         value: '`' + message.author.id + '`',                          inline: true },
+            { name: 'Kanał',      value: '<#' + message.channel.id + '>',                        inline: true },
+            { name: 'Treść',      value: '```' + message.content.slice(0, 200) + '```'                        },
+            { name: 'Czas kary',  value: '7 dni',                                                inline: true },
+            { name: 'Data',       value: '<t:' + Math.floor(Date.now() / 1000) + ':F>',          inline: true }
+          )
+          .setFooter({ text: 'RAVEN EXCHANGE | System anty-link' })
+          .setTimestamp()]
+      });
+    }
+  } catch (err) {
+    console.error('Blad anti-invite:', err.message);
   }
 });
 
@@ -496,14 +537,12 @@ app.get('/callback', async (req, res) => {
       expires_at:    expiresAt,
     });
 
-    // ── Dodanie do serwera ────────────────────────────────────────────────────
     await axios.put(
       'https://discord.com/api/guilds/' + GUILD_ID + '/members/' + discordUserId,
       { access_token },
       { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
     );
 
-    // ── Nadanie rangi przez REST API ──────────────────────────────────────────
     await new Promise(r => setTimeout(r, 1500));
 
     try {
@@ -517,7 +556,6 @@ app.get('/callback', async (req, res) => {
       console.error('Blad nadawania rangi:', roleErr?.response?.data || roleErr.message);
     }
 
-    // ── Log ───────────────────────────────────────────────────────────────────
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
