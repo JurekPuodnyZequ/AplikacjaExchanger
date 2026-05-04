@@ -39,6 +39,9 @@ const KLIENT_ROLE_ID           = '1500246544178479156';
 const RAVEN_LOGO_URL = 'https://i.imgur.com/sZmJes3.png';
 const CAT_GIF_URL    = 'https://i.imgur.com/m5FDtug.gif';
 
+const LEGIT_CHANNEL_ID = '1500246547861078129';
+const LEGIT_MSG_KEY    = 'legit_message_id';
+
 // ─── BAZA DANYCH ───────────────────────────────────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -196,6 +199,49 @@ async function sendOrUpdateVerify() {
   }
 }
 
+// ─── LEGIT CHECK ──────────────────────────────────────────────────────────────
+function buildLegitEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE x CZY JESTESMY LEGIT?', iconURL: RAVEN_LOGO_URL })
+    .setDescription(
+      '>>> **»** Jezeli uwazasz, ze **tak** to zaznacz reakcje ✅ pod **ta wiadomoscia**.\n' +
+      '**»** Jezeli uwazasz, ze **nie** to zaznacz reakcje ❌ pod **ta wiadomoscia**.\n\n' +
+      '**»** Zaznaczenie reakcji ❌ bez dowodu skutkuje **natychmiastowa przerwa na 7 dni**.'
+    )
+    .setThumbnail(CAT_GIF_URL)
+    .setImage(RAVEN_LOGO_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
+    .setTimestamp();
+}
+
+async function sendOrUpdateLegitCheck() {
+  try {
+    const channel = await client.channels.fetch(LEGIT_CHANNEL_ID).catch(() => null);
+    if (!channel) { console.error('Nie znaleziono kanalu legit check'); return; }
+
+    const embed      = buildLegitEmbed();
+    const existingId = await getConfig(LEGIT_MSG_KEY);
+
+    if (existingId) {
+      try {
+        const existing = await channel.messages.fetch(existingId);
+        await existing.edit({ embeds: [embed] });
+        console.log('Embed legit check zaktualizowany!');
+        return;
+      } catch {}
+    }
+
+    const msg = await channel.send({ embeds: [embed] });
+    await msg.react('✅');
+    await msg.react('❌');
+    await setConfig(LEGIT_MSG_KEY, msg.id);
+    console.log('Embed legit check wyslany!');
+  } catch (err) {
+    console.error('Blad sendOrUpdateLegitCheck:', err.message);
+  }
+}
+
 // ─── BOT ──────────────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -203,6 +249,7 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
   ],
 });
 
@@ -210,6 +257,7 @@ client.once('ready', async () => {
   console.log('Bot zalogowany jako ' + client.user.tag);
   await initDB();
   await sendOrUpdateVerify();
+  await sendOrUpdateLegitCheck();
 
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
@@ -248,6 +296,68 @@ client.on('guildMemberAdd', async member => {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Blad lobby welcome:', err.message);
+  }
+});
+
+// ─── LEGIT CHECK: obsługa reakcji ────────────────────────────────────────────
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+
+  // Pobierz pełne dane jeśli partial
+  if (reaction.partial) {
+    try { await reaction.fetch(); } catch { return; }
+  }
+  if (reaction.message.partial) {
+    try { await reaction.message.fetch(); } catch { return; }
+  }
+
+  // Tylko na kanale legit check
+  if (reaction.message.channel.id !== LEGIT_CHANNEL_ID) return;
+
+  // Tylko na naszej wiadomości legit
+  const legitMsgId = await getConfig(LEGIT_MSG_KEY).catch(() => null);
+  if (reaction.message.id !== legitMsgId) return;
+
+  // Tylko reakcja ❌
+  if (reaction.emoji.name !== '❌') return;
+
+  const guild = reaction.message.guild;
+  if (!guild) return;
+
+  const member = await guild.members.fetch(user.id).catch(() => null);
+  if (!member) return;
+
+  // Adminów i właściciela pomijamy
+  if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+  if (guild.ownerId === user.id) return;
+
+  try {
+    await reaction.users.remove(user.id).catch(() => {});
+    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Zaznaczenie reakcji nie-legit bez dowodu');
+
+    await user.send(
+      '🚫 **Dostałeś przerwę na 7 dni!**\nZaznaczenie reakcji ❌ na kanale legit check bez dowodu skutkuje natychmiastową karą.'
+    ).catch(() => {});
+
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      await logChannel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0xff0000)
+          .setTitle('🔨 Timeout za reakcję nie-legit')
+          .setThumbnail(user.displayAvatarURL ? user.displayAvatarURL() : '')
+          .addFields(
+            { name: 'Użytkownik', value: user.tag + ' (<@' + user.id + '>)', inline: true },
+            { name: 'ID',         value: '`' + user.id + '`',                inline: true },
+            { name: 'Czas kary',  value: '7 dni',                            inline: true },
+            { name: 'Data',       value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: true }
+          )
+          .setFooter({ text: 'RAVEN EXCHANGE | System legit check' })
+          .setTimestamp()]
+      });
+    }
+  } catch (err) {
+    console.error('Blad obslugi reakcji legit:', err.message);
   }
 });
 
