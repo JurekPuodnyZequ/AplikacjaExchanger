@@ -210,7 +210,7 @@ function buildLegitEmbed() {
       '**»** Zaznaczenie reakcji ❌ bez dowodu skutkuje **natychmiastowa przerwa na 7 dni**.'
     )
     .setThumbnail(CAT_GIF_URL)
-    .setImage(RAVEN_LOGO_URL)
+    .setImage('https://i.imgur.com/wB8hiP7.png')
     .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
     .setTimestamp();
 }
