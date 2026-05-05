@@ -266,6 +266,7 @@ function buildOpinieMainEmbed() {
       '**»** Zrobisz to klikając **poniższy przycisk.**'
     )
     .setThumbnail(CAT_GIF_URL)
+    .setImage(OPINIA_BANNER_URL)  // ← DODANY BANER
     .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
     .setTimestamp();
 }
