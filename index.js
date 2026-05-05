@@ -14,6 +14,11 @@ const {
   ButtonStyle,
   EmbedBuilder,
   PermissionsBitField,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
 } = require('discord.js');
 
 const app = express();
@@ -41,6 +46,10 @@ const CAT_GIF_URL    = 'https://i.imgur.com/m5FDtug.gif';
 
 const LEGIT_CHANNEL_ID = '1500246547861078129';
 const LEGIT_MSG_KEY    = 'legit_message_id';
+
+// ─── OPINIE ───────────────────────────────────────────────────────────────────
+const OPINIE_CHANNEL_ID = '1500246547861078128';
+const OPINIE_MSG_KEY    = 'opinie_message_id';
 
 // ─── BAZA DANYCH ───────────────────────────────────────────────────────────────
 const pool = new Pool({
@@ -163,7 +172,7 @@ function buildVerifyEmbed() {
     )
     .setThumbnail(CAT_GIF_URL)
     .setImage(RAVEN_LOGO_URL)
-    .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
     .setTimestamp();
 }
 
@@ -214,7 +223,7 @@ function buildLegitEmbed() {
     )
     .setThumbnail(CAT_GIF_URL)
     .setImage('https://i.imgur.com/wB8hiP7.png')
-    .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
     .setTimestamp();
 }
 
@@ -245,6 +254,79 @@ async function sendOrUpdateLegitCheck() {
   }
 }
 
+// ─── OPINIE: EMBED Z PRZYCISKIEM ──────────────────────────────────────────────
+function buildOpinieMainEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE × WYSTAW NAM OPINIĘ', iconURL: RAVEN_LOGO_URL })
+    .setDescription(
+      '>>> **»** Wystawiając **opinię** pokazujesz innym, jak **przebiegła Twoja wymiana.**\n' +
+      '**»** Gorąco prosimy o jej wystawienie, buduje to **nasze zaufanie.**\n\n' +
+      '**»** Zrobisz to klikając **poniższy przycisk.**'
+    )
+    .setThumbnail(CAT_GIF_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setTimestamp();
+}
+
+function buildOpinieComponents() {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('opinia_wystaw')
+      .setEmoji('⭐')
+      .setStyle(ButtonStyle.Secondary)
+  )];
+}
+
+async function sendOrUpdateOpinie() {
+  try {
+    const channel = await client.channels.fetch(OPINIE_CHANNEL_ID).catch(() => null);
+    if (!channel) { console.error('Nie znaleziono kanalu opinii'); return; }
+
+    const embed      = buildOpinieMainEmbed();
+    const components = buildOpinieComponents();
+    const existingId = await getConfig(OPINIE_MSG_KEY);
+
+    if (existingId) {
+      try {
+        const existing = await channel.messages.fetch(existingId);
+        await existing.edit({ embeds: [embed], components });
+        console.log('Embed opinii zaktualizowany!');
+        return;
+      } catch {}
+    }
+
+    const msg = await channel.send({ embeds: [embed], components });
+    await setConfig(OPINIE_MSG_KEY, msg.id);
+    console.log('Embed opinii wyslany!');
+  } catch (err) {
+    console.error('Blad sendOrUpdateOpinie:', err.message);
+  }
+}
+
+// ─── OPINIE: BUDOWANIE EMBEDA WYSWIETLANEGO PO WYSTAWIENIU ───────────────────
+function buildOpinieDisplayEmbed({ authorTag, authorId, avatarUrl, tresc, czasOczekiwania, przebiiegTransakcji, realizacjaWymiany }) {
+  function starsToEmoji(val) {
+    const n = parseInt(val);
+    return '⭐'.repeat(n) + '✩'.repeat(5 - n);
+  }
+
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE × OPINIA', iconURL: RAVEN_LOGO_URL })
+    .setDescription(
+      '>>> **»** Twórca **opinii:** <@' + authorId + '>\n' +
+      '**»** Treść **opinii:** `' + tresc + '`\n\n' +
+      '**»** Czas Oczekiwania: ' + starsToEmoji(czasOczekiwania) + '\n' +
+      '**»** Przebieg Transakcji: ' + starsToEmoji(przebiiegTransakcji) + '\n' +
+      '**»** Realizacja Wymiany: ' + starsToEmoji(realizacjaWymiany)
+    )
+    .setThumbnail(CAT_GIF_URL)
+    .setImage(RAVEN_LOGO_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setTimestamp();
+}
+
 // ─── BOT ──────────────────────────────────────────────────────────────────────
 const client = new Client({
   intents: [
@@ -261,6 +343,7 @@ client.once('ready', async () => {
   await initDB();
   await sendOrUpdateVerify();
   await sendOrUpdateLegitCheck();
+  await sendOrUpdateOpinie();
 
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
@@ -294,7 +377,7 @@ client.on('guildMemberAdd', async member => {
         '>> Mamy nadzieje, ze **zostaniesz z nami na dluzej**.'
       )
       .setThumbnail(CAT_GIF_URL)
-      .setFooter({ text: 'RAVEN EXCHANGE (c) 2026' })
+      .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
       .setTimestamp();
     await channel.send({ embeds: [embed] });
   } catch (err) {
@@ -418,6 +501,139 @@ client.on('interactionCreate', async interaction => {
     await interaction.reply({
       content: 'Kliknij link ponizej, aby sie zweryfikowac:\n' + oauthUrl,
       flags: 64,
+    });
+    return;
+  }
+
+  // ── PRZYCISK OPINII: otwieramy modal ─────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === 'opinia_wystaw') {
+    // Sprawdzamy czy użytkownik ma rolę Klienta
+    const member = interaction.member;
+    if (!member.roles.cache.has(KLIENT_ROLE_ID)) {
+      await interaction.reply({
+        content: '❌ **Nie możesz wystawić opinii.**\nTa opcja jest dostępna tylko dla osób z rangą **Klient**.',
+        flags: 64,
+      });
+      return;
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId('opinia_modal')
+      .setTitle('Wystaw opinię — Raven Exchange');
+
+    const trescInput = new TextInputBuilder()
+      .setCustomId('opinia_tresc')
+      .setLabel('NAPISZ SWOJĄ OPINIĘ:')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Przykład: Wymiana zrealizowana ekspresowo, bardzo polecam.')
+      .setMinLength(5)
+      .setMaxLength(500)
+      .setRequired(true);
+
+    const czasInput = new TextInputBuilder()
+      .setCustomId('opinia_czas')
+      .setLabel('CZAS OCZEKIWANIA: (1–5)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Wpisz liczbę od 1 do 5')
+      .setMinLength(1)
+      .setMaxLength(1)
+      .setRequired(true);
+
+    const przebiiegInput = new TextInputBuilder()
+      .setCustomId('opinia_przebieg')
+      .setLabel('PRZEBIEG TRANSAKCJI: (1–5)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Wpisz liczbę od 1 do 5')
+      .setMinLength(1)
+      .setMaxLength(1)
+      .setRequired(true);
+
+    const realizacjaInput = new TextInputBuilder()
+      .setCustomId('opinia_realizacja')
+      .setLabel('REALIZACJA WYMIANY: (1–5)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Wpisz liczbę od 1 do 5')
+      .setMinLength(1)
+      .setMaxLength(1)
+      .setRequired(true);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(trescInput),
+      new ActionRowBuilder().addComponents(czasInput),
+      new ActionRowBuilder().addComponents(przebiiegInput),
+      new ActionRowBuilder().addComponents(realizacjaInput),
+    );
+
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ── MODAL OPINII: obsługa submit ──────────────────────────────────────────
+  if (interaction.isModalSubmit() && interaction.customId === 'opinia_modal') {
+    await interaction.deferReply({ flags: 64 });
+
+    const tresc            = interaction.fields.getTextInputValue('opinia_tresc').trim();
+    const czasRaw          = interaction.fields.getTextInputValue('opinia_czas').trim();
+    const przebiegRaw      = interaction.fields.getTextInputValue('opinia_przebieg').trim();
+    const realizacjaRaw    = interaction.fields.getTextInputValue('opinia_realizacja').trim();
+
+    // Walidacja ocen
+    const validValues = ['1', '2', '3', '4', '5'];
+    if (!validValues.includes(czasRaw) || !validValues.includes(przebiegRaw) || !validValues.includes(realizacjaRaw)) {
+      await interaction.editReply({ content: '❌ Oceny muszą być liczbami od **1 do 5**. Spróbuj ponownie.' });
+      return;
+    }
+
+    const user      = interaction.user;
+    const avatarUrl = user.displayAvatarURL({ size: 256 });
+
+    const displayEmbed = buildOpinieDisplayEmbed({
+      authorTag:          user.tag,
+      authorId:           user.id,
+      avatarUrl,
+      tresc,
+      czasOczekiwania:    czasRaw,
+      przebiiegTransakcji: przebiegRaw,
+      realizacjaWymiany:  realizacjaRaw,
+    });
+
+    // Wysyłamy opinię na kanał opinii (przed przyciskiem wystawiania)
+    try {
+      const opinieChannel = await client.channels.fetch(OPINIE_CHANNEL_ID).catch(() => null);
+      if (opinieChannel) {
+        // Szukamy wiadomości z przyciskiem (pin embed), żeby wstawić opinię PRZED nią
+        const existingBtnMsgId = await getConfig(OPINIE_MSG_KEY);
+
+        await opinieChannel.send({ embeds: [displayEmbed] });
+      }
+    } catch (err) {
+      console.error('Blad wysylania opinii na kanal:', err.message);
+    }
+
+    // Log do kanału logów
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      await logChannel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x00cc66)
+          .setTitle('⭐ Nowa opinia — Raven Exchange')
+          .setThumbnail(avatarUrl)
+          .addFields(
+            { name: 'Użytkownik', value: user.tag + ' (<@' + user.id + '>)',        inline: true },
+            { name: 'ID',         value: '`' + user.id + '`',                       inline: true },
+            { name: 'Treść',      value: '```' + tresc.slice(0, 300) + '```'                     },
+            { name: 'Czas oczekiwania',    value: czasRaw + '/5',    inline: true },
+            { name: 'Przebieg transakcji', value: przebiegRaw + '/5', inline: true },
+            { name: 'Realizacja wymiany',  value: realizacjaRaw + '/5', inline: true },
+            { name: 'Data', value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: false }
+          )
+          .setFooter({ text: 'RAVEN EXCHANGE | System opinii' })
+          .setTimestamp()]
+      }).catch(() => {});
+    }
+
+    await interaction.editReply({
+      content: '✅ **Dziękujemy za wystawienie opinii!**\nTwoja opinia została opublikowana na kanale opinii.',
     });
     return;
   }
