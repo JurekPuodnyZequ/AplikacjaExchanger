@@ -41,8 +41,9 @@ const VERIFY_MSG_KEY    = 'verify_message_id';
 const STATS_KLIENCI_CHANNEL_ID = '1500246545466003498';
 const KLIENT_ROLE_ID           = '1500246544178479156';
 
-const RAVEN_LOGO_URL = 'https://i.imgur.com/sZmJes3.png';
-const CAT_GIF_URL    = 'https://i.imgur.com/m5FDtug.gif';
+const RAVEN_LOGO_URL   = 'https://i.imgur.com/sZmJes3.png';
+const CAT_GIF_URL      = 'https://i.imgur.com/m5FDtug.gif';
+const OPINIA_BANNER_URL = 'https://i.imgur.com/Y0GDCby.png';
 
 const LEGIT_CHANNEL_ID = '1500246547861078129';
 const LEGIT_MSG_KEY    = 'legit_message_id';
@@ -306,24 +307,23 @@ async function sendOrUpdateOpinie() {
 
 // ─── OPINIE: BUDOWANIE EMBEDA WYSWIETLANEGO PO WYSTAWIENIU ───────────────────
 function buildOpinieDisplayEmbed({ authorTag, authorId, avatarUrl, tresc, czasOczekiwania, przebiiegTransakcji, realizacjaWymiany }) {
-  function starsToEmoji(val) {
+  function ratingBar(val) {
     const n = parseInt(val);
-    return '⭐'.repeat(n) + '✩'.repeat(5 - n);
+    return '`' + '★'.repeat(n) + '☆'.repeat(5 - n) + '` **' + val + '/5**';
   }
 
   return new EmbedBuilder()
-    .setColor(0xFFFFFF)
+    .setColor(0x111111)
     .setAuthor({ name: 'RAVEN EXCHANGE × OPINIA', iconURL: RAVEN_LOGO_URL })
     .setDescription(
-      '>>> **»** Twórca **opinii:** <@' + authorId + '>\n' +
-      '**»** Treść **opinii:** `' + tresc + '`\n\n' +
-      '**»** Czas Oczekiwania: ' + starsToEmoji(czasOczekiwania) + '\n' +
-      '**»** Przebieg Transakcji: ' + starsToEmoji(przebiiegTransakcji) + '\n' +
-      '**»** Realizacja Wymiany: ' + starsToEmoji(realizacjaWymiany)
+      '> 👤 <@' + authorId + '>\n' +
+      '> 💬 *' + tresc + '*\n\n' +
+      '⏱ **Czas oczekiwania** — ' + ratingBar(czasOczekiwania) + '\n' +
+      '🔄 **Przebieg transakcji** — ' + ratingBar(przebiiegTransakcji) + '\n' +
+      '✅ **Realizacja wymiany** — ' + ratingBar(realizacjaWymiany)
     )
-    .setThumbnail(CAT_GIF_URL)
-    .setImage(RAVEN_LOGO_URL)
-    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setImage(OPINIA_BANNER_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026', iconURL: RAVEN_LOGO_URL })
     .setTimestamp();
 }
 
@@ -507,7 +507,6 @@ client.on('interactionCreate', async interaction => {
 
   // ── PRZYCISK OPINII: otwieramy modal ─────────────────────────────────────
   if (interaction.isButton() && interaction.customId === 'opinia_wystaw') {
-    // Sprawdzamy czy użytkownik ma rolę Klienta
     const member = interaction.member;
     if (!member.roles.cache.has(KLIENT_ROLE_ID)) {
       await interaction.reply({
@@ -572,12 +571,11 @@ client.on('interactionCreate', async interaction => {
   if (interaction.isModalSubmit() && interaction.customId === 'opinia_modal') {
     await interaction.deferReply({ flags: 64 });
 
-    const tresc            = interaction.fields.getTextInputValue('opinia_tresc').trim();
-    const czasRaw          = interaction.fields.getTextInputValue('opinia_czas').trim();
-    const przebiegRaw      = interaction.fields.getTextInputValue('opinia_przebieg').trim();
-    const realizacjaRaw    = interaction.fields.getTextInputValue('opinia_realizacja').trim();
+    const tresc         = interaction.fields.getTextInputValue('opinia_tresc').trim();
+    const czasRaw       = interaction.fields.getTextInputValue('opinia_czas').trim();
+    const przebiegRaw   = interaction.fields.getTextInputValue('opinia_przebieg').trim();
+    const realizacjaRaw = interaction.fields.getTextInputValue('opinia_realizacja').trim();
 
-    // Walidacja ocen
     const validValues = ['1', '2', '3', '4', '5'];
     if (!validValues.includes(czasRaw) || !validValues.includes(przebiegRaw) || !validValues.includes(realizacjaRaw)) {
       await interaction.editReply({ content: '❌ Oceny muszą być liczbami od **1 do 5**. Spróbuj ponownie.' });
@@ -588,29 +586,24 @@ client.on('interactionCreate', async interaction => {
     const avatarUrl = user.displayAvatarURL({ size: 256 });
 
     const displayEmbed = buildOpinieDisplayEmbed({
-      authorTag:          user.tag,
-      authorId:           user.id,
+      authorTag:           user.tag,
+      authorId:            user.id,
       avatarUrl,
       tresc,
-      czasOczekiwania:    czasRaw,
+      czasOczekiwania:     czasRaw,
       przebiiegTransakcji: przebiegRaw,
-      realizacjaWymiany:  realizacjaRaw,
+      realizacjaWymiany:   realizacjaRaw,
     });
 
-    // Wysyłamy opinię na kanał opinii (przed przyciskiem wystawiania)
     try {
       const opinieChannel = await client.channels.fetch(OPINIE_CHANNEL_ID).catch(() => null);
       if (opinieChannel) {
-        // Szukamy wiadomości z przyciskiem (pin embed), żeby wstawić opinię PRZED nią
-        const existingBtnMsgId = await getConfig(OPINIE_MSG_KEY);
-
         await opinieChannel.send({ embeds: [displayEmbed] });
       }
     } catch (err) {
       console.error('Blad wysylania opinii na kanal:', err.message);
     }
 
-    // Log do kanału logów
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
@@ -622,8 +615,8 @@ client.on('interactionCreate', async interaction => {
             { name: 'Użytkownik', value: user.tag + ' (<@' + user.id + '>)',        inline: true },
             { name: 'ID',         value: '`' + user.id + '`',                       inline: true },
             { name: 'Treść',      value: '```' + tresc.slice(0, 300) + '```'                     },
-            { name: 'Czas oczekiwania',    value: czasRaw + '/5',    inline: true },
-            { name: 'Przebieg transakcji', value: przebiegRaw + '/5', inline: true },
+            { name: 'Czas oczekiwania',    value: czasRaw + '/5',      inline: true },
+            { name: 'Przebieg transakcji', value: przebiegRaw + '/5',  inline: true },
             { name: 'Realizacja wymiany',  value: realizacjaRaw + '/5', inline: true },
             { name: 'Data', value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: false }
           )
