@@ -38,6 +38,13 @@ const LOG_CHANNEL_ID    = '1500246545797349542';
 const LOBBY_CHANNEL_ID  = '1500246547303104602';
 const VERIFY_MSG_KEY    = 'verify_message_id';
 
+// ─── WERYFIKACJA MATEMATYCZNA ────────────────────────────────────────────────
+const MATH_VERIFY_MSG_KEY = 'math_verify_message_id';
+
+// Przechowuje tymczasowo zadania matematyczne dla użytkowników (in-memory)
+// Format: { userId: { a, b, answer, expiresAt } }
+const mathChallenges = new Map();
+
 const STATS_KLIENCI_CHANNEL_ID = '1500246545466003498';
 const KLIENT_ROLE_ID           = '1500246544178479156';
 
@@ -168,7 +175,6 @@ async function updateUsersStats() {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) return;
 
-    // pewne liczenie (bez cache bugów)
     await guild.members.fetch();
 
     const count = guild.memberCount;
@@ -182,7 +188,61 @@ async function updateUsersStats() {
     console.error('Blad statystyk users:', err.message);
   }
 }
-// ─── WERYFIKACJA EMBED ─────────────────────────────────────────────────────────
+
+// ─── WERYFIKACJA MATEMATYCZNA: EMBED ──────────────────────────────────────────
+function buildMathVerifyEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE x Weryfikacja (bez logowania)', iconURL: RAVEN_LOGO_URL })
+    .setTitle('Szybka weryfikacja — Rozwiąż działanie')
+    .setDescription(
+      '>>> Aby uzyskać dostęp do serwera **Raven Exchange**, możesz skorzystać z **szybkiej weryfikacji** bez logowania przez Discord.\n\n' +
+      '**»** Kliknij przycisk poniżej.\n' +
+      '**»** Rozwiąż proste działanie matematyczne (dodawanie, wynik max 100).\n' +
+      '**»** Po poprawnej odpowiedzi otrzymasz dostęp do serwera!'
+    )
+    .setThumbnail(CAT_GIF_URL)
+    .setImage(RAVEN_LOGO_URL)
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setTimestamp();
+}
+
+function buildMathVerifyComponents() {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('math_verify_start')
+      .setLabel('✏️ Zweryfikuj się (bez logowania)')
+      .setStyle(ButtonStyle.Secondary)
+  )];
+}
+
+async function sendOrUpdateMathVerify() {
+  try {
+    const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
+    if (!channel) { console.error('Nie znaleziono kanalu weryfikacji (math)'); return; }
+
+    const embed      = buildMathVerifyEmbed();
+    const components = buildMathVerifyComponents();
+    const existingId = await getConfig(MATH_VERIFY_MSG_KEY);
+
+    if (existingId) {
+      try {
+        const existing = await channel.messages.fetch(existingId);
+        await existing.edit({ embeds: [embed], components });
+        console.log('Embed weryfikacji matematycznej zaktualizowany!');
+        return;
+      } catch {}
+    }
+
+    const msg = await channel.send({ embeds: [embed], components });
+    await setConfig(MATH_VERIFY_MSG_KEY, msg.id);
+    console.log('Embed weryfikacji matematycznej wyslany!');
+  } catch (err) {
+    console.error('Blad sendOrUpdateMathVerify:', err.message);
+  }
+}
+
+// ─── WERYFIKACJA EMBED (OAuth2) ────────────────────────────────────────────────
 function buildVerifyEmbed() {
   return new EmbedBuilder()
     .setColor(0xFFFFFF)
@@ -287,7 +347,7 @@ function buildOpinieMainEmbed() {
       '**»** Zrobisz to klikając **poniższy przycisk.**'
     )
     .setThumbnail(CAT_GIF_URL)
-    .setImage(OPINIA_BANNER_URL)  // ← DODANY BANER
+    .setImage(OPINIA_BANNER_URL)
     .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
     .setTimestamp();
 }
@@ -364,6 +424,7 @@ client.once('ready', async () => {
   console.log('Bot zalogowany jako ' + client.user.tag);
   await initDB();
   await sendOrUpdateVerify();
+  await sendOrUpdateMathVerify();   // ← nowa wiadomość weryfikacji matematycznej
   await sendOrUpdateLegitCheck();
   await sendOrUpdateOpinie();
   const guild = client.guilds.cache.get(GUILD_ID);
@@ -373,10 +434,11 @@ client.once('ready', async () => {
 
   await updateKlienciStats();
   setInterval(updateKlienciStats, 5 * 60 * 1000);
-  
+
   setInterval(updateUsersStats, 5 * 60 * 1000);
   await updateUsersStats();
 });
+
 // ─── AKTUALIZACJA PRZY ZMIANIE RANGI ─────────────────────────────────────────
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const hadRole = oldMember.roles.cache.has(KLIENT_ROLE_ID);
@@ -510,7 +572,7 @@ client.on('messageCreate', async message => {
 // ─── INTERAKCJE ───────────────────────────────────────────────────────────────
 client.on('interactionCreate', async interaction => {
 
-  // ── PRZYCISK WERYFIKACJI ──────────────────────────────────────────────────
+  // ── PRZYCISK WERYFIKACJI (OAuth2) ─────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === 'verify') {
     const oauthUrl =
       'https://discord.com/oauth2/authorize' +
@@ -524,6 +586,129 @@ client.on('interactionCreate', async interaction => {
       content: 'Kliknij link ponizej, aby sie zweryfikowac:\n' + oauthUrl,
       flags: 64,
     });
+    return;
+  }
+
+  // ── PRZYCISK WERYFIKACJI MATEMATYCZNEJ: generujemy zadanie ───────────────
+  if (interaction.isButton() && interaction.customId === 'math_verify_start') {
+    const member = interaction.member;
+
+    // Sprawdź czy już ma rangę
+    if (member.roles.cache.has(VERIFY_ROLE_ID)) {
+      await interaction.reply({
+        content: '✅ Jesteś już zweryfikowany!',
+        flags: 64,
+      });
+      return;
+    }
+
+    // Wygeneruj losowe działanie (a + b ≤ 100, a i b > 0)
+    const a = Math.floor(Math.random() * 50) + 1;
+    const b = Math.floor(Math.random() * (100 - a)) + 1;
+    const answer = a + b;
+
+    // Zapisz challenge z czasem ważności 5 minut
+    mathChallenges.set(interaction.user.id, {
+      a,
+      b,
+      answer,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+
+    // Pokaż modal z pytaniem
+    const modal = new ModalBuilder()
+      .setCustomId('math_verify_modal')
+      .setTitle('Weryfikacja — Rozwiąż działanie');
+
+    const answerInput = new TextInputBuilder()
+      .setCustomId('math_answer')
+      .setLabel('Ile wynosi: ' + a + ' + ' + b + ' = ?')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Wpisz wynik...')
+      .setMinLength(1)
+      .setMaxLength(4)
+      .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(answerInput));
+
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ── MODAL WERYFIKACJI MATEMATYCZNEJ: sprawdzamy odpowiedź ────────────────
+  if (interaction.isModalSubmit() && interaction.customId === 'math_verify_modal') {
+    await interaction.deferReply({ flags: 64 });
+
+    const userId    = interaction.user.id;
+    const challenge = mathChallenges.get(userId);
+
+    // Brak lub wygasłe zadanie
+    if (!challenge || Date.now() > challenge.expiresAt) {
+      mathChallenges.delete(userId);
+      await interaction.editReply({
+        content: '❌ Twoje zadanie wygasło lub nie istnieje. Kliknij przycisk ponownie.',
+      });
+      return;
+    }
+
+    const rawAnswer  = interaction.fields.getTextInputValue('math_answer').trim();
+    const userAnswer = parseInt(rawAnswer);
+
+    // Zła odpowiedź
+    if (isNaN(userAnswer) || userAnswer !== challenge.answer) {
+      await interaction.editReply({
+        content: '❌ **Zła odpowiedź!** Spróbuj ponownie — kliknij przycisk weryfikacji jeszcze raz.',
+      });
+      return;
+    }
+
+    // Poprawna odpowiedź — usuń challenge
+    mathChallenges.delete(userId);
+
+    // Nadaj rangę
+    try {
+      const guild  = client.guilds.cache.get(GUILD_ID);
+      const member = await guild.members.fetch(userId).catch(() => null);
+
+      if (!member) {
+        await interaction.editReply({ content: '❌ Nie znaleziono Cię na serwerze. Upewnij się, że jesteś na serwerze.' });
+        return;
+      }
+
+      await member.roles.add(VERIFY_ROLE_ID, 'Weryfikacja matematyczna');
+
+      // Log do kanału logów
+      const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+      if (logChannel) {
+        await logChannel.send({
+          embeds: [new EmbedBuilder()
+            .setColor(0x00cc66)
+            .setTitle('✅ Weryfikacja matematyczna — Raven Exchange')
+            .setThumbnail(interaction.user.displayAvatarURL())
+            .addFields(
+              { name: 'Użytkownik', value: interaction.user.tag + ' (<@' + userId + '>)', inline: true },
+              { name: 'ID',         value: '`' + userId + '`',                            inline: true },
+              { name: 'Metoda',     value: 'Weryfikacja matematyczna (bez OAuth2)',        inline: false },
+              { name: 'Zadanie',    value: challenge.a + ' + ' + challenge.b + ' = ' + challenge.answer, inline: true },
+              { name: 'Data',       value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: true }
+            )
+            .setFooter({ text: 'RAVEN EXCHANGE | System weryfikacji matematycznej' })
+            .setTimestamp()]
+        }).catch(() => {});
+      }
+
+      await interaction.editReply({
+        content:
+          '✅ **Weryfikacja zakończona sukcesem!**\n' +
+          'Poprawna odpowiedź: **' + challenge.answer + '**\n\n' +
+          'Witaj na serwerze **Raven Exchange**! 🎉',
+      });
+    } catch (err) {
+      console.error('Blad nadawania rangi (math verify):', err.message);
+      await interaction.editReply({
+        content: '❌ Wystąpił błąd przy nadawaniu rangi. Skontaktuj się z administracją.',
+      });
+    }
     return;
   }
 
