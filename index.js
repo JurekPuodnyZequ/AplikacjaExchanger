@@ -176,7 +176,7 @@ async function updateUsersStats() {
     const channel = guild.channels.cache.get(STATS_USERS_CHANNEL_ID);
     if (!channel) return;
 
-    await channel.setName('👥 〢Użytkownicy→' + count);
+    await channel.setName('📊 〢Użytkownicy→' + count);
     console.log('Statystyki użytkowników: ' + count);
   } catch (err) {
     console.error('Blad statystyk users:', err.message);
