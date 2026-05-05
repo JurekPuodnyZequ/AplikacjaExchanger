@@ -138,8 +138,6 @@ async function updateKlienciStats() {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) { console.log('BRAK GUILD W CACHE'); return; }
 
-    await guild.members.fetch();
-
     const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
     console.log('Liczba klientow: ' + count);
 
@@ -271,7 +269,7 @@ client.once('ready', async () => {
   }
 
   await updateKlienciStats();
-  setInterval(updateKlienciStats, 30 * 1000);
+  setInterval(updateKlienciStats, 5 * 60 * 1000);
 });
 
 // ─── AKTUALIZACJA PRZY ZMIANIE RANGI ─────────────────────────────────────────
