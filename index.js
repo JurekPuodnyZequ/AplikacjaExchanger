@@ -368,7 +368,6 @@ client.once('ready', async () => {
   await sendOrUpdateOpinie();
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
-    await guild.members.fetch();
     console.log('Cache memberow zaladowany: ' + guild.members.cache.size + ' osob');
   }
 
