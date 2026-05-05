@@ -715,9 +715,27 @@ client.on('interactionCreate', async interaction => {
     try {
       const channel = await client.channels.fetch(PROPOZYCJE_CHANNEL_ID).catch(() => null);
       if (channel) {
+        // Usuń starą wiadomość z przyciskiem
+        const existingId = await getConfig(PROPOZYCJE_MSG_KEY);
+        if (existingId) {
+          try {
+            const existingMsg = await channel.messages.fetch(existingId);
+            await existingMsg.delete();
+          } catch {}
+          await setConfig(PROPOZYCJE_MSG_KEY, null);
+        }
+
+        // Wyślij propozycję użytkownika
         const sent = await channel.send({ embeds: [propEmbed] });
         await sent.react('✅');
         await sent.react('❌');
+
+        // Wyślij nowy embed z przyciskiem na samym dole
+        const newMainMsg = await channel.send({
+          embeds: [buildPropozycjeMainEmbed()],
+          components: buildPropozycjeComponents(),
+        });
+        await setConfig(PROPOZYCJE_MSG_KEY, newMainMsg.id);
       }
     } catch (err) {
       console.error('Blad wysylania propozycji:', err.message);
