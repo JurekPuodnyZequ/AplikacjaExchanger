@@ -40,9 +40,6 @@ const VERIFY_MSG_KEY    = 'verify_message_id';
 
 // ─── WERYFIKACJA MATEMATYCZNA ────────────────────────────────────────────────
 const MATH_VERIFY_MSG_KEY = 'math_verify_message_id';
-
-// Przechowuje tymczasowo zadania matematyczne dla użytkowników (in-memory)
-// Format: { userId: { a, b, answer, expiresAt } }
 const mathChallenges = new Map();
 
 const STATS_KLIENCI_CHANNEL_ID = '1500246545466003498';
@@ -50,16 +47,19 @@ const KLIENT_ROLE_ID           = '1500246544178479156';
 
 const STATS_USERS_CHANNEL_ID = '1500246545466003499';
 
-const RAVEN_LOGO_URL   = 'https://i.imgur.com/sZmJes3.png';
-const CAT_GIF_URL      = 'https://i.imgur.com/m5FDtug.gif';
+const RAVEN_LOGO_URL    = 'https://i.imgur.com/sZmJes3.png';
+const CAT_GIF_URL       = 'https://i.imgur.com/m5FDtug.gif';
 const OPINIA_BANNER_URL = 'https://i.imgur.com/Y0GDCby.png';
 
 const LEGIT_CHANNEL_ID = '1500246547861078129';
 const LEGIT_MSG_KEY    = 'legit_message_id';
 
-// ─── OPINIE ───────────────────────────────────────────────────────────────────
 const OPINIE_CHANNEL_ID = '1500246547861078128';
 const OPINIE_MSG_KEY    = 'opinie_message_id';
+
+// ─── PROPOZYCJE ───────────────────────────────────────────────────────────────
+const PROPOZYCJE_CHANNEL_ID = '1500246547655295007';
+const PROPOZYCJE_MSG_KEY    = 'propozycje_message_id';
 
 // ─── BAZA DANYCH ───────────────────────────────────────────────────────────────
 const pool = new Pool({
@@ -156,32 +156,24 @@ async function updateKlienciStats() {
   try {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) { console.log('BRAK GUILD W CACHE'); return; }
-
     const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
-    console.log('Liczba klientow: ' + count);
-
     const channel = guild.channels.cache.get(STATS_KLIENCI_CHANNEL_ID);
-    if (!channel) { console.log('BRAK KANALU ' + STATS_KLIENCI_CHANNEL_ID + ' W CACHE'); return; }
-
+    if (!channel) return;
     await channel.setName('📊 〢Klienci→' + count);
     console.log('Statystyki klientow zaktualizowane: ' + count);
   } catch (err) {
     console.error('Blad statystyk klientow:', err.message);
   }
 }
-// ─── Statystyki ile jest użytkowników ─────────────────────────────────────────────────────────
+
 async function updateUsersStats() {
   try {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) return;
-
     await guild.members.fetch();
-
     const count = guild.memberCount;
-
     const channel = guild.channels.cache.get(STATS_USERS_CHANNEL_ID);
     if (!channel) return;
-
     await channel.setName('📊 〢Użytkownicy→' + count);
     console.log('Statystyki użytkowników: ' + count);
   } catch (err) {
@@ -220,11 +212,9 @@ async function sendOrUpdateMathVerify() {
   try {
     const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
     if (!channel) { console.error('Nie znaleziono kanalu weryfikacji (math)'); return; }
-
     const embed      = buildMathVerifyEmbed();
     const components = buildMathVerifyComponents();
     const existingId = await getConfig(MATH_VERIFY_MSG_KEY);
-
     if (existingId) {
       try {
         const existing = await channel.messages.fetch(existingId);
@@ -233,7 +223,6 @@ async function sendOrUpdateMathVerify() {
         return;
       } catch {}
     }
-
     const msg = await channel.send({ embeds: [embed], components });
     await setConfig(MATH_VERIFY_MSG_KEY, msg.id);
     console.log('Embed weryfikacji matematycznej wyslany!');
@@ -271,11 +260,9 @@ async function sendOrUpdateVerify() {
   try {
     const channel = await client.channels.fetch(VERIFY_CHANNEL_ID).catch(() => null);
     if (!channel) { console.error('Nie znaleziono kanalu weryfikacji'); return; }
-
     const embed      = buildVerifyEmbed();
     const components = buildVerifyComponents();
     const existingId = await getConfig(VERIFY_MSG_KEY);
-
     if (existingId) {
       try {
         const existing = await channel.messages.fetch(existingId);
@@ -284,7 +271,6 @@ async function sendOrUpdateVerify() {
         return;
       } catch {}
     }
-
     const msg = await channel.send({ embeds: [embed], components });
     await setConfig(VERIFY_MSG_KEY, msg.id);
     console.log('Embed weryfikacji wyslany!');
@@ -313,10 +299,8 @@ async function sendOrUpdateLegitCheck() {
   try {
     const channel = await client.channels.fetch(LEGIT_CHANNEL_ID).catch(() => null);
     if (!channel) { console.error('Nie znaleziono kanalu legit check'); return; }
-
     const embed      = buildLegitEmbed();
     const existingId = await getConfig(LEGIT_MSG_KEY);
-
     if (existingId) {
       try {
         const existing = await channel.messages.fetch(existingId);
@@ -325,7 +309,6 @@ async function sendOrUpdateLegitCheck() {
         return;
       } catch {}
     }
-
     const msg = await channel.send({ embeds: [embed] });
     await msg.react('✅');
     await msg.react('❌');
@@ -336,7 +319,7 @@ async function sendOrUpdateLegitCheck() {
   }
 }
 
-// ─── OPINIE: EMBED Z PRZYCISKIEM ──────────────────────────────────────────────
+// ─── OPINIE ───────────────────────────────────────────────────────────────────
 function buildOpinieMainEmbed() {
   return new EmbedBuilder()
     .setColor(0xFFFFFF)
@@ -365,11 +348,9 @@ async function sendOrUpdateOpinie() {
   try {
     const channel = await client.channels.fetch(OPINIE_CHANNEL_ID).catch(() => null);
     if (!channel) { console.error('Nie znaleziono kanalu opinii'); return; }
-
     const embed      = buildOpinieMainEmbed();
     const components = buildOpinieComponents();
     const existingId = await getConfig(OPINIE_MSG_KEY);
-
     if (existingId) {
       try {
         const existing = await channel.messages.fetch(existingId);
@@ -378,7 +359,6 @@ async function sendOrUpdateOpinie() {
         return;
       } catch {}
     }
-
     const msg = await channel.send({ embeds: [embed], components });
     await setConfig(OPINIE_MSG_KEY, msg.id);
     console.log('Embed opinii wyslany!');
@@ -387,13 +367,11 @@ async function sendOrUpdateOpinie() {
   }
 }
 
-// ─── OPINIE: BUDOWANIE EMBEDA WYSWIETLANEGO PO WYSTAWIENIU ───────────────────
-function buildOpinieDisplayEmbed({ authorTag, authorId, avatarUrl, tresc, czasOczekiwania, przebiiegTransakcji, realizacjaWymiany }) {
+function buildOpinieDisplayEmbed({ authorId, avatarUrl, tresc, czasOczekiwania, przebiiegTransakcji, realizacjaWymiany }) {
   function ratingBar(val) {
     const n = parseInt(val);
     return '`' + '★'.repeat(n) + '☆'.repeat(5 - n) + '` **' + val + '/5**';
   }
-
   return new EmbedBuilder()
     .setColor(0x111111)
     .setAuthor({ name: 'RAVEN EXCHANGE × OPINIA', iconURL: RAVEN_LOGO_URL })
@@ -407,6 +385,52 @@ function buildOpinieDisplayEmbed({ authorTag, authorId, avatarUrl, tresc, czasOc
     .setImage(OPINIA_BANNER_URL)
     .setFooter({ text: 'RAVEN EXCHANGE © 2026', iconURL: RAVEN_LOGO_URL })
     .setTimestamp();
+}
+
+// ─── PROPOZYCJE ───────────────────────────────────────────────────────────────
+function buildPropozycjeMainEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xFFFFFF)
+    .setAuthor({ name: 'RAVEN EXCHANGE × PROPOZYCJE', iconURL: RAVEN_LOGO_URL })
+    .setDescription(
+      '>>> **»** Masz pomysł na ulepszenie serwera?\n' +
+      '**»** Kliknij przycisk poniżej i **wystaw swoją propozycję**.\n' +
+      '**»** Społeczność zagłosuje czy ją **przyjąć** ✅ czy **odrzucić** ❌.'
+    )
+    .setFooter({ text: 'RAVEN EXCHANGE © 2026' })
+    .setTimestamp();
+}
+
+function buildPropozycjeComponents() {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('propozycja_wystaw')
+      .setLabel('💡 Wystaw propozycję')
+      .setStyle(ButtonStyle.Secondary)
+  )];
+}
+
+async function sendOrUpdatePropozycje() {
+  try {
+    const channel = await client.channels.fetch(PROPOZYCJE_CHANNEL_ID).catch(() => null);
+    if (!channel) { console.error('Nie znaleziono kanalu propozycji'); return; }
+    const embed      = buildPropozycjeMainEmbed();
+    const components = buildPropozycjeComponents();
+    const existingId = await getConfig(PROPOZYCJE_MSG_KEY);
+    if (existingId) {
+      try {
+        const existing = await channel.messages.fetch(existingId);
+        await existing.edit({ embeds: [embed], components });
+        console.log('Embed propozycji zaktualizowany!');
+        return;
+      } catch {}
+    }
+    const msg = await channel.send({ embeds: [embed], components });
+    await setConfig(PROPOZYCJE_MSG_KEY, msg.id);
+    console.log('Embed propozycji wyslany!');
+  } catch (err) {
+    console.error('Blad sendOrUpdatePropozycje:', err.message);
+  }
 }
 
 // ─── BOT ──────────────────────────────────────────────────────────────────────
@@ -424,17 +448,16 @@ client.once('ready', async () => {
   console.log('Bot zalogowany jako ' + client.user.tag);
   await initDB();
   await sendOrUpdateVerify();
-  await sendOrUpdateMathVerify();   // ← nowa wiadomość weryfikacji matematycznej
+  await sendOrUpdateMathVerify();
   await sendOrUpdateLegitCheck();
   await sendOrUpdateOpinie();
+  await sendOrUpdatePropozycje();
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
     console.log('Cache memberow zaladowany: ' + guild.members.cache.size + ' osob');
   }
-
   await updateKlienciStats();
   setInterval(updateKlienciStats, 5 * 60 * 1000);
-
   setInterval(updateUsersStats, 5 * 60 * 1000);
   await updateUsersStats();
 });
@@ -472,38 +495,28 @@ client.on('guildMemberAdd', async member => {
 // ─── LEGIT CHECK: obsługa reakcji ────────────────────────────────────────────
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
-
   if (reaction.partial) {
     try { await reaction.fetch(); } catch { return; }
   }
   if (reaction.message.partial) {
     try { await reaction.message.fetch(); } catch { return; }
   }
-
   if (reaction.message.channel.id !== LEGIT_CHANNEL_ID) return;
-
   const legitMsgId = await getConfig(LEGIT_MSG_KEY).catch(() => null);
   if (reaction.message.id !== legitMsgId) return;
-
   if (reaction.emoji.name !== '❌') return;
-
   const guild = reaction.message.guild;
   if (!guild) return;
-
   const member = await guild.members.fetch(user.id).catch(() => null);
   if (!member) return;
-
   if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
   if (guild.ownerId === user.id) return;
-
   try {
     await reaction.users.remove(user.id).catch(() => {});
     await member.timeout(7 * 24 * 60 * 60 * 1000, 'Zaznaczenie reakcji nie-legit bez dowodu');
-
     await user.send(
       '🚫 **Dostałeś przerwę na 7 dni!**\nZaznaczenie reakcji ❌ na kanale legit check bez dowodu skutkuje natychmiastową karą.'
     ).catch(() => {});
-
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
@@ -535,16 +548,12 @@ client.on('messageCreate', async message => {
   if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
   if (message.guild.ownerId === message.author.id) return;
   if (!DISCORD_LINK_REGEX.test(message.content)) return;
-
   try {
     await message.delete();
-
     await message.author.send(
       '🚫 **Nie wysyłaj linków do innych serwerów Discord!**\nZa karę dostajesz przerwę na **7 dni**. Przemyśl co zrobiłeś.'
     ).catch(() => {});
-
     await message.member.timeout(7 * 24 * 60 * 60 * 1000, 'Wysłanie linku do Discorda');
-
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
@@ -581,7 +590,6 @@ client.on('interactionCreate', async interaction => {
       '&response_type=code' +
       '&scope=' + encodeURIComponent('identify guilds.join') +
       '&state=' + interaction.user.id;
-
     await interaction.reply({
       content: 'Kliknij link ponizej, aby sie zweryfikowac:\n' + oauthUrl,
       flags: 64,
@@ -589,37 +597,20 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // ── PRZYCISK WERYFIKACJI MATEMATYCZNEJ: generujemy zadanie ───────────────
+  // ── PRZYCISK WERYFIKACJI MATEMATYCZNEJ ───────────────────────────────────
   if (interaction.isButton() && interaction.customId === 'math_verify_start') {
     const member = interaction.member;
-
-    // Sprawdź czy już ma rangę
     if (member.roles.cache.has(VERIFY_ROLE_ID)) {
-      await interaction.reply({
-        content: '✅ Jesteś już zweryfikowany!',
-        flags: 64,
-      });
+      await interaction.reply({ content: '✅ Jesteś już zweryfikowany!', flags: 64 });
       return;
     }
-
-    // Wygeneruj losowe działanie (a + b ≤ 100, a i b > 0)
     const a = Math.floor(Math.random() * 50) + 1;
     const b = Math.floor(Math.random() * (100 - a)) + 1;
     const answer = a + b;
-
-    // Zapisz challenge z czasem ważności 5 minut
-    mathChallenges.set(interaction.user.id, {
-      a,
-      b,
-      answer,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-    });
-
-    // Pokaż modal z pytaniem
+    mathChallenges.set(interaction.user.id, { a, b, answer, expiresAt: Date.now() + 5 * 60 * 1000 });
     const modal = new ModalBuilder()
       .setCustomId('math_verify_modal')
       .setTitle('Weryfikacja — Rozwiąż działanie');
-
     const answerInput = new TextInputBuilder()
       .setCustomId('math_answer')
       .setLabel('Ile wynosi: ' + a + ' + ' + b + ' = ?')
@@ -628,56 +619,36 @@ client.on('interactionCreate', async interaction => {
       .setMinLength(1)
       .setMaxLength(4)
       .setRequired(true);
-
     modal.addComponents(new ActionRowBuilder().addComponents(answerInput));
-
     await interaction.showModal(modal);
     return;
   }
 
-  // ── MODAL WERYFIKACJI MATEMATYCZNEJ: sprawdzamy odpowiedź ────────────────
+  // ── MODAL WERYFIKACJI MATEMATYCZNEJ ──────────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId === 'math_verify_modal') {
     await interaction.deferReply({ flags: 64 });
-
     const userId    = interaction.user.id;
     const challenge = mathChallenges.get(userId);
-
-    // Brak lub wygasłe zadanie
     if (!challenge || Date.now() > challenge.expiresAt) {
       mathChallenges.delete(userId);
-      await interaction.editReply({
-        content: '❌ Twoje zadanie wygasło lub nie istnieje. Kliknij przycisk ponownie.',
-      });
+      await interaction.editReply({ content: '❌ Twoje zadanie wygasło. Kliknij przycisk ponownie.' });
       return;
     }
-
     const rawAnswer  = interaction.fields.getTextInputValue('math_answer').trim();
     const userAnswer = parseInt(rawAnswer);
-
-    // Zła odpowiedź
     if (isNaN(userAnswer) || userAnswer !== challenge.answer) {
-      await interaction.editReply({
-        content: '❌ **Zła odpowiedź!** Spróbuj ponownie — kliknij przycisk weryfikacji jeszcze raz.',
-      });
+      await interaction.editReply({ content: '❌ **Zła odpowiedź!** Spróbuj ponownie — kliknij przycisk jeszcze raz.' });
       return;
     }
-
-    // Poprawna odpowiedź — usuń challenge
     mathChallenges.delete(userId);
-
-    // Nadaj rangę
     try {
       const guild  = client.guilds.cache.get(GUILD_ID);
       const member = await guild.members.fetch(userId).catch(() => null);
-
       if (!member) {
-        await interaction.editReply({ content: '❌ Nie znaleziono Cię na serwerze. Upewnij się, że jesteś na serwerze.' });
+        await interaction.editReply({ content: '❌ Nie znaleziono Cię na serwerze.' });
         return;
       }
-
       await member.roles.add(VERIFY_ROLE_ID, 'Weryfikacja matematyczna');
-
-      // Log do kanału logów
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
         await logChannel.send({
@@ -696,7 +667,6 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()]
         }).catch(() => {});
       }
-
       await interaction.editReply({
         content:
           '✅ **Weryfikacja zakończona sukcesem!**\n' +
@@ -705,10 +675,71 @@ client.on('interactionCreate', async interaction => {
       });
     } catch (err) {
       console.error('Blad nadawania rangi (math verify):', err.message);
-      await interaction.editReply({
-        content: '❌ Wystąpił błąd przy nadawaniu rangi. Skontaktuj się z administracją.',
-      });
+      await interaction.editReply({ content: '❌ Wystąpił błąd przy nadawaniu rangi. Skontaktuj się z administracją.' });
     }
+    return;
+  }
+
+  // ── PRZYCISK PROPOZYCJI: otwieramy modal ─────────────────────────────────
+  if (interaction.isButton() && interaction.customId === 'propozycja_wystaw') {
+    const modal = new ModalBuilder()
+      .setCustomId('propozycja_modal')
+      .setTitle('Wystaw propozycję — Raven Exchange');
+    const trescInput = new TextInputBuilder()
+      .setCustomId('propozycja_tresc')
+      .setLabel('TWOJA PROPOZYCJA:')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Opisz swój pomysł na ulepszenie serwera...')
+      .setMinLength(10)
+      .setMaxLength(500)
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(trescInput));
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ── MODAL PROPOZYCJI: submit ──────────────────────────────────────────────
+  if (interaction.isModalSubmit() && interaction.customId === 'propozycja_modal') {
+    await interaction.deferReply({ flags: 64 });
+    const tresc = interaction.fields.getTextInputValue('propozycja_tresc').trim();
+    const user  = interaction.user;
+    const propEmbed = new EmbedBuilder()
+      .setColor(0xFFFFFF)
+      .setAuthor({ name: 'RAVEN EXCHANGE × PROPOZYCJA', iconURL: RAVEN_LOGO_URL })
+      .setDescription(
+        '> 👤 <@' + user.id + '>\n' +
+        '> 💡 *' + tresc + '*'
+      )
+      .setFooter({ text: 'RAVEN EXCHANGE © 2026', iconURL: RAVEN_LOGO_URL })
+      .setTimestamp();
+    try {
+      const channel = await client.channels.fetch(PROPOZYCJE_CHANNEL_ID).catch(() => null);
+      if (channel) {
+        const sent = await channel.send({ embeds: [propEmbed] });
+        await sent.react('✅');
+        await sent.react('❌');
+      }
+    } catch (err) {
+      console.error('Blad wysylania propozycji:', err.message);
+    }
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      await logChannel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('💡 Nowa propozycja — Raven Exchange')
+          .setThumbnail(user.displayAvatarURL())
+          .addFields(
+            { name: 'Użytkownik', value: user.tag + ' (<@' + user.id + '>)', inline: true },
+            { name: 'ID',         value: '`' + user.id + '`',                inline: true },
+            { name: 'Treść',      value: '```' + tresc.slice(0, 300) + '```'              },
+            { name: 'Data',       value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: false }
+          )
+          .setFooter({ text: 'RAVEN EXCHANGE | System propozycji' })
+          .setTimestamp()]
+      }).catch(() => {});
+    }
+    await interaction.editReply({ content: '✅ **Twoja propozycja została wysłana!** Społeczność może teraz na nią głosować.' });
     return;
   }
 
@@ -722,11 +753,9 @@ client.on('interactionCreate', async interaction => {
       });
       return;
     }
-
     const modal = new ModalBuilder()
       .setCustomId('opinia_modal')
       .setTitle('Wystaw opinię — Raven Exchange');
-
     const trescInput = new TextInputBuilder()
       .setCustomId('opinia_tresc')
       .setLabel('NAPISZ SWOJĄ OPINIĘ:')
@@ -735,7 +764,6 @@ client.on('interactionCreate', async interaction => {
       .setMinLength(5)
       .setMaxLength(500)
       .setRequired(true);
-
     const czasInput = new TextInputBuilder()
       .setCustomId('opinia_czas')
       .setLabel('CZAS OCZEKIWANIA: (1–5)')
@@ -744,7 +772,6 @@ client.on('interactionCreate', async interaction => {
       .setMinLength(1)
       .setMaxLength(1)
       .setRequired(true);
-
     const przebiiegInput = new TextInputBuilder()
       .setCustomId('opinia_przebieg')
       .setLabel('PRZEBIEG TRANSAKCJI: (1–5)')
@@ -753,7 +780,6 @@ client.on('interactionCreate', async interaction => {
       .setMinLength(1)
       .setMaxLength(1)
       .setRequired(true);
-
     const realizacjaInput = new TextInputBuilder()
       .setCustomId('opinia_realizacja')
       .setLabel('REALIZACJA WYMIANY: (1–5)')
@@ -762,38 +788,31 @@ client.on('interactionCreate', async interaction => {
       .setMinLength(1)
       .setMaxLength(1)
       .setRequired(true);
-
     modal.addComponents(
       new ActionRowBuilder().addComponents(trescInput),
       new ActionRowBuilder().addComponents(czasInput),
       new ActionRowBuilder().addComponents(przebiiegInput),
       new ActionRowBuilder().addComponents(realizacjaInput),
     );
-
     await interaction.showModal(modal);
     return;
   }
 
-  // ── MODAL OPINII: obsługa submit ──────────────────────────────────────────
+  // ── MODAL OPINII: submit ──────────────────────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId === 'opinia_modal') {
     await interaction.deferReply({ flags: 64 });
-
     const tresc         = interaction.fields.getTextInputValue('opinia_tresc').trim();
     const czasRaw       = interaction.fields.getTextInputValue('opinia_czas').trim();
     const przebiegRaw   = interaction.fields.getTextInputValue('opinia_przebieg').trim();
     const realizacjaRaw = interaction.fields.getTextInputValue('opinia_realizacja').trim();
-
     const validValues = ['1', '2', '3', '4', '5'];
     if (!validValues.includes(czasRaw) || !validValues.includes(przebiegRaw) || !validValues.includes(realizacjaRaw)) {
       await interaction.editReply({ content: '❌ Oceny muszą być liczbami od **1 do 5**. Spróbuj ponownie.' });
       return;
     }
-
     const user      = interaction.user;
     const avatarUrl = user.displayAvatarURL({ size: 256 });
-
     const displayEmbed = buildOpinieDisplayEmbed({
-      authorTag:           user.tag,
       authorId:            user.id,
       avatarUrl,
       tresc,
@@ -801,16 +820,12 @@ client.on('interactionCreate', async interaction => {
       przebiiegTransakcji: przebiegRaw,
       realizacjaWymiany:   realizacjaRaw,
     });
-
     try {
       const opinieChannel = await client.channels.fetch(OPINIE_CHANNEL_ID).catch(() => null);
-      if (opinieChannel) {
-        await opinieChannel.send({ embeds: [displayEmbed] });
-      }
+      if (opinieChannel) await opinieChannel.send({ embeds: [displayEmbed] });
     } catch (err) {
       console.error('Blad wysylania opinii na kanal:', err.message);
     }
-
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
@@ -822,8 +837,8 @@ client.on('interactionCreate', async interaction => {
             { name: 'Użytkownik', value: user.tag + ' (<@' + user.id + '>)',        inline: true },
             { name: 'ID',         value: '`' + user.id + '`',                       inline: true },
             { name: 'Treść',      value: '```' + tresc.slice(0, 300) + '```'                     },
-            { name: 'Czas oczekiwania',    value: czasRaw + '/5',      inline: true },
-            { name: 'Przebieg transakcji', value: przebiegRaw + '/5',  inline: true },
+            { name: 'Czas oczekiwania',    value: czasRaw + '/5',       inline: true },
+            { name: 'Przebieg transakcji', value: przebiegRaw + '/5',   inline: true },
             { name: 'Realizacja wymiany',  value: realizacjaRaw + '/5', inline: true },
             { name: 'Data', value: '<t:' + Math.floor(Date.now() / 1000) + ':F>', inline: false }
           )
@@ -831,10 +846,7 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp()]
       }).catch(() => {});
     }
-
-    await interaction.editReply({
-      content: '✅ **Dziękujemy za wystawienie opinii!**\nTwoja opinia została opublikowana na kanale opinii.',
-    });
+    await interaction.editReply({ content: '✅ **Dziękujemy za wystawienie opinii!**\nTwoja opinia została opublikowana na kanale opinii.' });
     return;
   }
 
@@ -843,15 +855,12 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return interaction.reply({ content: 'Brak uprawnien.', flags: 64 });
     }
-
     await interaction.deferReply({ flags: 64 });
-
     const targetGuildId = interaction.options.getString('guild_id');
     const tryb          = interaction.options.getString('tryb');
     const iloscRaw      = interaction.options.getString('ilosc');
     const ilosc         = iloscRaw ? parseInt(iloscRaw) : null;
     const targetUserId  = interaction.options.getString('user_id');
-
     let users = [];
     if (tryb === 'all') {
       const res = await pool.query('SELECT * FROM users');
@@ -866,28 +875,22 @@ client.on('interactionCreate', async interaction => {
       if (res.rows.length === 0) return interaction.editReply({ content: 'Nie znaleziono uzytkownika w bazie!' });
       users = res.rows;
     }
-
     if (users.length === 0) return interaction.editReply({ content: 'Brak uzytkownikow w bazie.' });
-
     const targetGuild = await client.guilds.fetch(targetGuildId).catch(() => null);
     if (!targetGuild) return interaction.editReply({ content: 'Nie znaleziono serwera docelowego!' });
-
     let success = 0, failed = 0, alreadyOn = 0, deauth = 0, notFound = 0, processed = 0;
     const BATCH_SIZE  = 5;
     const BATCH_DELAY = 300;
     const total       = users.length;
     const startTime   = Date.now();
-
     function progressBar(current, total, size = 12) {
       const filled = Math.round(total ? (current / total) * size : 0);
       return '█'.repeat(filled) + '░'.repeat(size - filled);
     }
-
     function formatTime(ms) {
       const sec = Math.floor(ms / 1000);
       return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
     }
-
     async function updateProgress() {
       const elapsed = Date.now() - startTime;
       const speed   = processed / (elapsed / 1000 || 1);
@@ -906,22 +909,18 @@ client.on('interactionCreate', async interaction => {
           '⏱️ ETA: ' + formatTime(eta),
       }).catch(() => {});
     }
-
     const heartbeat = setInterval(() => updateProgress(), 3000);
-
     async function addSingleUser(row) {
       let attempts = 0;
       while (attempts < 3) {
         try {
           const token = await refreshAccessToken(row.user_id);
           if (!token) { failed++; return; }
-
           const res = await axios.put(
             'https://discord.com/api/guilds/' + targetGuildId + '/members/' + row.user_id,
             { access_token: token },
             { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
           );
-
           if (res.status === 204) {
             alreadyOn++;
           } else {
@@ -955,16 +954,13 @@ client.on('interactionCreate', async interaction => {
       }
       failed++;
     }
-
     for (let i = 0; i < users.length; i += BATCH_SIZE) {
       const batch = users.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map(row => addSingleUser(row)));
       processed += batch.length;
       if (i + BATCH_SIZE < users.length) await new Promise(r => setTimeout(r, BATCH_DELAY));
     }
-
     clearInterval(heartbeat);
-
     await interaction.editReply({
       content:
         '✅ **Transfer zakonczony!**\n\n' +
@@ -1012,7 +1008,6 @@ if (process.argv.includes('--setup')) {
       .addStringOption(opt => opt.setName('user_id').setDescription('ID uzytkownika (tryb id)').setRequired(false))
       .toJSON(),
   ];
-
   rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands })
     .then(() => { console.log('Komendy zarejestrowane!'); process.exit(0); })
     .catch(err => { console.error('Blad rejestracji:', err); process.exit(1); });
@@ -1024,7 +1019,6 @@ app.get('/', (req, res) => res.send('Raven Exchange Bot dziala!'));
 app.get('/callback', async (req, res) => {
   const { code, state: userId } = req.query;
   if (!code || !userId) return res.status(400).send('Brak kodu lub ID uzytkownika.');
-
   try {
     const tokenRes = await axios.post(
       'https://discord.com/api/oauth2/token',
@@ -1037,20 +1031,16 @@ app.get('/callback', async (req, res) => {
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10_000 }
     );
-
     const { access_token, refresh_token, expires_in } = tokenRes.data;
     const expiresAt = Date.now() + expires_in * 1000;
-
     const userRes = await axios.get('https://discord.com/api/users/@me', {
       headers: { Authorization: 'Bearer ' + access_token },
       timeout: 10_000,
     });
-
     const { id: discordUserId, username, global_name, avatar } = userRes.data;
     const avatarUrl = avatar
       ? 'https://cdn.discordapp.com/avatars/' + discordUserId + '/' + avatar + '.png'
       : 'https://cdn.discordapp.com/embed/avatars/0.png';
-
     await saveUser({
       user_id:       discordUserId,
       username,
@@ -1060,15 +1050,12 @@ app.get('/callback', async (req, res) => {
       refresh_token,
       expires_at:    expiresAt,
     });
-
     await axios.put(
       'https://discord.com/api/guilds/' + GUILD_ID + '/members/' + discordUserId,
       { access_token },
       { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' }, timeout: 10_000 }
     );
-
     await new Promise(r => setTimeout(r, 1500));
-
     try {
       await axios.put(
         'https://discord.com/api/guilds/' + GUILD_ID + '/members/' + discordUserId + '/roles/' + VERIFY_ROLE_ID,
@@ -1079,7 +1066,6 @@ app.get('/callback', async (req, res) => {
     } catch (roleErr) {
       console.error('Blad nadawania rangi:', roleErr?.response?.data || roleErr.message);
     }
-
     const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       await logChannel.send({
@@ -1096,7 +1082,6 @@ app.get('/callback', async (req, res) => {
           .setTimestamp()],
       });
     }
-
     return res.send(`<!DOCTYPE html>
 <html lang="pl">
 <head>
