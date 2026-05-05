@@ -41,6 +41,8 @@ const VERIFY_MSG_KEY    = 'verify_message_id';
 const STATS_KLIENCI_CHANNEL_ID = '1500246545466003498';
 const KLIENT_ROLE_ID           = '1500246544178479156';
 
+const STATS_USERS_CHANNEL_ID = '1500246545466003499';
+
 const RAVEN_LOGO_URL   = 'https://i.imgur.com/sZmJes3.png';
 const CAT_GIF_URL      = 'https://i.imgur.com/m5FDtug.gif';
 const OPINIA_BANNER_URL = 'https://i.imgur.com/Y0GDCby.png';
@@ -160,7 +162,26 @@ async function updateKlienciStats() {
     console.error('Blad statystyk klientow:', err.message);
   }
 }
+// ─── Statystyki ile jest użytkowników ─────────────────────────────────────────────────────────
+async function updateUsersStats() {
+  try {
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) return;
 
+    // pewne liczenie (bez cache bugów)
+    await guild.members.fetch();
+
+    const count = guild.memberCount;
+
+    const channel = guild.channels.cache.get(STATS_USERS_CHANNEL_ID);
+    if (!channel) return;
+
+    await channel.setName('👥 〢Użytkownicy→' + count);
+    console.log('Statystyki użytkowników: ' + count);
+  } catch (err) {
+    console.error('Blad statystyk users:', err.message);
+  }
+}
 // ─── WERYFIKACJA EMBED ─────────────────────────────────────────────────────────
 function buildVerifyEmbed() {
   return new EmbedBuilder()
@@ -345,7 +366,6 @@ client.once('ready', async () => {
   await sendOrUpdateVerify();
   await sendOrUpdateLegitCheck();
   await sendOrUpdateOpinie();
-
   const guild = client.guilds.cache.get(GUILD_ID);
   if (guild) {
     await guild.members.fetch();
@@ -354,8 +374,10 @@ client.once('ready', async () => {
 
   await updateKlienciStats();
   setInterval(updateKlienciStats, 5 * 60 * 1000);
+  
+  setInterval(updateUsersStats, 5 * 60 * 1000);
+  await updateUsersStats();
 });
-
 // ─── AKTUALIZACJA PRZY ZMIANIE RANGI ─────────────────────────────────────────
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const hadRole = oldMember.roles.cache.has(KLIENT_ROLE_ID);
