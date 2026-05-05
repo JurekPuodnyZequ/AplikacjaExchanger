@@ -137,12 +137,17 @@ async function updateKlienciStats() {
   try {
     const guild = client.guilds.cache.get(GUILD_ID);
     if (!guild) { console.log('BRAK GUILD W CACHE'); return; }
+
+    await guild.members.fetch();
+
     const count = guild.members.cache.filter(m => m.roles.cache.has(KLIENT_ROLE_ID)).size;
     console.log('Liczba klientow: ' + count);
+
     const channel = guild.channels.cache.get(STATS_KLIENCI_CHANNEL_ID);
     if (!channel) { console.log('BRAK KANALU ' + STATS_KLIENCI_CHANNEL_ID + ' W CACHE'); return; }
-    await channel.setName(' 〢Klienci→' + count);
-    console.log('Statystyki klientow: ' + count);
+
+    await channel.setName('📊 〢Klienci→' + count);
+    console.log('Statystyki klientow zaktualizowane: ' + count);
   } catch (err) {
     console.error('Blad statystyk klientow:', err.message);
   }
@@ -303,7 +308,6 @@ client.on('guildMemberAdd', async member => {
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
 
-  // Pobierz pełne dane jeśli partial
   if (reaction.partial) {
     try { await reaction.fetch(); } catch { return; }
   }
@@ -311,14 +315,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
     try { await reaction.message.fetch(); } catch { return; }
   }
 
-  // Tylko na kanale legit check
   if (reaction.message.channel.id !== LEGIT_CHANNEL_ID) return;
 
-  // Tylko na naszej wiadomości legit
   const legitMsgId = await getConfig(LEGIT_MSG_KEY).catch(() => null);
   if (reaction.message.id !== legitMsgId) return;
 
-  // Tylko reakcja ❌
   if (reaction.emoji.name !== '❌') return;
 
   const guild = reaction.message.guild;
@@ -327,7 +328,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
   const member = await guild.members.fetch(user.id).catch(() => null);
   if (!member) return;
 
-  // Adminów i właściciela pomijamy
   if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
   if (guild.ownerId === user.id) return;
 
