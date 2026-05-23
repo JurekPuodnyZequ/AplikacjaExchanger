@@ -36,20 +36,54 @@ client.once("ready", async () => {
   await sendTicketEmbed();
 });
 
-// ── Wysyła embed z przyciskiem do tworzenia ticketów ─────────────────────────
+// ── Wysyła embedy na kanał ticketów ──────────────────────────────────────────
 async function sendTicketEmbed() {
   const channel = await client.channels.fetch(CONFIG.ticketChannelId).catch(() => null);
   if (!channel) return console.error("❌ Nie znaleziono kanału ticketów.");
 
-  // Sprawdź czy embed już istnieje (żeby nie duplikować po restarcie)
+  // Sprawdź czy embedy już istnieją (żeby nie duplikować po restarcie)
   const messages = await channel.messages.fetch({ limit: 10 });
   const alreadySent = messages.some((m) => m.author.id === client.user.id && m.embeds.length > 0);
-  if (alreadySent) return console.log("ℹ️ Embed już wysłany, pomijam.");
+  if (alreadySent) return console.log("ℹ️ Embedy już wysłane, pomijam.");
 
-  const embed = new EmbedBuilder()
+  // ── Embed 1: Informacje o produkcie ────────────────────────────────────────
+  const productEmbed = new EmbedBuilder()
+    .setTitle("Forza Horizon 6 Deluxe – Zakup")
+    .setDescription(
+      `**Kupując od nas Forze dostajesz:**\n` +
+      `• Pełną wersję gry + **wszystkie DLC** (Premium)\n` +
+      `• Dostęp grania **Online** ze znajomymi\n` +
+      `• **Dodatkowe** auta na start gry\n` +
+      `• Gra w twojej bibliotece **Steam** oraz w aplikacji **XBOX**\n\n` +
+
+      `**Jak to działa?**\n` +
+      `Dostajesz od nas pełny poradnik jak możesz taką forzę u siebie odblokować na koncie (nie żądamy od ciebie żadnych informacji dotyczących k0nta)\n\n` +
+
+      `**<:ticket:1234567890> JAK OD NAS ZAKUPIĆ?**\n` +
+      `Tworząc ticket na kanale w kategorii zakup.\n\n` +
+
+      `**Przyjmujemy:**\n` +
+      `> Kod BLIK — \`10%\` prowizji\n` +
+      `> BLIK na numer telefonu — \`0%\` prowizji\n` +
+      `> PSC z paragonem — \`13%\` prowizji\n` +
+      `> PSC bez paragonu — \`20%\` prowizji\n` +
+      `> MyPSC — \`25%\` prowizji\n` +
+      `> LTC (Litecoin) — \`0%\` prowizji\n` +
+      `> BTC (Bitcoin) — \`0%\` prowizji\n` +
+      `> USDT — \`0%\` prowizji\n` +
+      `> USDC — \`0%\` prowizji\n` +
+      `> ETH (Ethereum) — \`0%\` prowizji\n` +
+      `> PayPal — \`13%\` prowizji`
+    )
+    .setImage("https://i.imgur.com/XF9hEnD.png")
+    .setColor(0x5b2d8e);
+
+  await channel.send({ embeds: [productEmbed] });
+
+  // ── Embed 2: Przycisk do tworzenia ticketu ──────────────────────────────────
+  const ticketEmbed = new EmbedBuilder()
     .setTitle("🎮 Tickety Zakup Forza Horizon 6")
     .setDescription(
-      `Witaj w systemie zakupu gier Steam!\n\n` +
       `Kliknij przycisk poniżej, aby otworzyć ticket i zakupić **${CONFIG.gameName}**.\n\n` +
       `> 🔒 Jedyną osobą upoważnioną do sprzedaży gier Steam jest <@${CONFIG.sellerUserId}>.\n\n` +
       `Po otwarciu ticketu skontaktuje się z Tobą sprzedawca.`
@@ -66,8 +100,8 @@ async function sendTicketEmbed() {
       .setStyle(ButtonStyle.Primary)
   );
 
-  await channel.send({ embeds: [embed], components: [row] });
-  console.log("✅ Embed ticketów wysłany.");
+  await channel.send({ embeds: [ticketEmbed], components: [row] });
+  console.log("✅ Embedy wysłane.");
 }
 
 // ── Obsługa interakcji (przyciski) ───────────────────────────────────────────
