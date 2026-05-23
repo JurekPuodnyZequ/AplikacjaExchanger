@@ -59,6 +59,8 @@ async function sendTicketEmbed() {
       `**Jak to działa?**\n` +
       `Dostajesz od nas pełny poradnik jak możesz taką forzę u siebie odblokować na koncie (nie żądamy od ciebie żadnych informacji dotyczących k0nta)\n\n` +
 
+      `**💰 Cena: \`13 zł\`**\n\n` +
+
       `**<:ticket:1234567890> JAK OD NAS ZAKUPIĆ?**\n` +
       `Tworząc ticket na kanale w kategorii zakup.\n\n` +
 
@@ -75,7 +77,7 @@ async function sendTicketEmbed() {
       `> ETH (Ethereum) — \`0%\` prowizji\n` +
       `> PayPal — \`13%\` prowizji`
     )
-    .setImage("https://i.imgur.com/XF9hEnD.png")
+    .setImage("https://i.imgur.com/tA2sq1h.jpeg")
     .setColor(0x5b2d8e);
 
   await channel.send({ embeds: [productEmbed] });
